@@ -8,15 +8,15 @@ This project contains:
 
 ## Project Structure
 
-- `/Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/update_linkedin_applications.py`  
+- `scripts/update_linkedin_applications.py`  
   Parses `.txt` emails and updates categorized company lists in markdown.
-- `/Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/setup_rclone_drive.sh`  
+- `scripts/setup_rclone_drive.sh`  
   Helper to configure rclone Google Drive remote.
-- `/Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/sync_drive_rclone.sh`  
+- `scripts/sync_drive_rclone.sh`  
   Helper to sync email files from Google Drive folder.
-- `/Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/folder_shell_sql.py`  
+- `scripts/folder_shell_sql.py`  
   Runs an interactive SQL-backed program in terminal: scans a data source directory, stores hierarchy in SQLite, and lets you browse it as a tree shell.
-- `/Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/linkedin_applications_gui_sql.py`  
+- `scripts/linkedin_applications_gui_sql.py`  
   Desktop GUI for applications. Auto classifies by status (`applied/interview/rejected/review`) and lets you manually move cards between statuses, with SQL persistence.
 
 ## Requirements
@@ -36,21 +36,21 @@ python3 -m pip install PySide6
 Default command:
 
 ```bash
-python3 /Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/update_linkedin_applications.py
+python3 scripts/update_linkedin_applications.py
 ```
 
 By default, it reads emails from:
 
-`/Users/grigorymordokhovich/Desktop/CV/LinkedIn email`
+`$HOME/Desktop/CV/LinkedIn email`
 
 and writes to:
 
-`/Users/grigorymordokhovich/Library/Mobile Documents/iCloud~md~obsidian/Documents/M.Greg/Работа/Поданные и откланенные заявки/System_Administrator.md`
+`$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/M.Greg/Работа/Поданные и откланенные заявки/System_Administrator.md`
 
 You can override paths:
 
 ```bash
-python3 /Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/update_linkedin_applications.py \
+python3 scripts/update_linkedin_applications.py \
   --source-dir "/path/to/email-txt-files" \
   --target-file "/path/to/output.md"
 ```
@@ -60,13 +60,13 @@ python3 /Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/update_lin
 Start interactive program (default source is current directory):
 
 ```bash
-python3 /Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/folder_shell_sql.py
+python3 scripts/folder_shell_sql.py
 ```
 
 Custom source and DB path:
 
 ```bash
-python3 /Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/folder_shell_sql.py \
+python3 scripts/folder_shell_sql.py \
   "/path/to/source-folder" \
   --db "/path/to/hierarchy.db" \
   --sync-first
@@ -84,8 +84,8 @@ Inside the program:
 Run GUI:
 
 ```bash
-python3 /Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/linkedin_applications_gui_sql.py \
-  --source-dir "/Users/grigorymordokhovich/Desktop/CV/LinkedIn email"
+python3 scripts/linkedin_applications_gui_sql.py \
+  --source-dir "$HOME/Desktop/CV/LinkedIn email"
 ```
 
 What it does:

@@ -1468,7 +1468,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="GUI app for LinkedIn applications with SQL status management.")
     parser.add_argument(
         "--source-dir",
-        default="/Users/grigorymordokhovich/Library/Application Support/DriveCVSync/LinkedIn email",
+        default=str(Path.home() / "Library" / "Application Support" / "DriveCVSync" / "LinkedIn email"),
         help="Directory with LinkedIn *.txt emails.",
     )
     parser.add_argument(

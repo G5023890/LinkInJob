@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 FOLDER_ID="1edFf52mpJVSJcOYuP8ACLKX_T64g21Tn"
-DEST_DIR="/Users/grigorymordokhovich/Library/Application Support/DriveCVSync/LinkedIn email"
-DESKTOP_MIRROR_DIR="/Users/grigorymordokhovich/Desktop/CV/LinkedIn email"
+DEST_DIR="${DEST_DIR:-$HOME/Library/Application Support/DriveCVSync/LinkedIn email}"
+DESKTOP_MIRROR_DIR="${DESKTOP_MIRROR_DIR:-$HOME/Desktop/CV/LinkedIn email}"
 REMOTE_NAME="${RCLONE_REMOTE:-gdrive_cv}"
-UPDATE_SCRIPT="/Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/update_linkedin_applications.py"
+UPDATE_SCRIPT="${UPDATE_SCRIPT:-$PROJECT_ROOT/scripts/update_linkedin_applications.py}"
 
 if ! command -v rclone >/dev/null 2>&1; then
   echo "ERROR: rclone is not installed." >&2
@@ -17,7 +20,7 @@ mkdir -p "$DESKTOP_MIRROR_DIR"
 
 if ! rclone listremotes | grep -qx "${REMOTE_NAME}:"; then
   echo "ERROR: remote '${REMOTE_NAME}' is not configured." >&2
-  echo "Run once: /Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts/setup_rclone_drive.sh" >&2
+  echo "Run once: $PROJECT_ROOT/scripts/setup_rclone_drive.sh" >&2
   exit 2
 fi
 

@@ -8,25 +8,17 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 
-DEFAULT_SOURCE_DIR = Path("/Users/grigorymordokhovich/Desktop/CV/LinkedIn email")
-DEFAULT_TARGET_FILE = Path(
-    "/Users/grigorymordokhovich/Library/Mobile Documents/iCloud~md~obsidian/Documents/M.Greg/Работа/Поданные и откланенные заявки/System_Administrator.md"
-)
-DEFAULT_VACANCIES_FILE = Path(
-    "/Users/grigorymordokhovich/Library/Mobile Documents/iCloud~md~obsidian/Documents/M.Greg/Работа/LinkedIn/Компания.md"
-)
-DEFAULT_COMPANY_DIR = Path(
-    "/Users/grigorymordokhovich/Library/Mobile Documents/iCloud~md~obsidian/Documents/M.Greg/Работа/LinkedIn"
-)
-DEFAULT_ARCHIVE_DIR = Path(
-    "/Users/grigorymordokhovich/Library/Mobile Documents/iCloud~md~obsidian/Documents/M.Greg/Работа/LinkedIn/Archive"
-)
-DEFAULT_MANUAL_DIR = Path(
-    "/Users/grigorymordokhovich/Library/Mobile Documents/iCloud~md~obsidian/Documents/M.Greg/Работа/Поданные и откланенные заявки/System_Administrator"
-)
-DEFAULT_REVIEW_FILE = Path(
-    "/Users/grigorymordokhovich/Library/Mobile Documents/iCloud~md~obsidian/Documents/M.Greg/Работа/LinkedIn/Проверить_вручную.md"
-)
+HOME = Path.home()
+ICLOUD_ROOT = HOME / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "M.Greg"
+WORK_ROOT = ICLOUD_ROOT / "Работа"
+
+DEFAULT_SOURCE_DIR = HOME / "Desktop" / "CV" / "LinkedIn email"
+DEFAULT_TARGET_FILE = WORK_ROOT / "Поданные и откланенные заявки" / "System_Administrator.md"
+DEFAULT_VACANCIES_FILE = WORK_ROOT / "LinkedIn" / "Компания.md"
+DEFAULT_COMPANY_DIR = WORK_ROOT / "LinkedIn"
+DEFAULT_ARCHIVE_DIR = WORK_ROOT / "LinkedIn" / "Archive"
+DEFAULT_MANUAL_DIR = WORK_ROOT / "Поданные и откланенные заявки" / "System_Administrator"
+DEFAULT_REVIEW_FILE = WORK_ROOT / "LinkedIn" / "Проверить_вручную.md"
 
 
 def normalize_company(name: str) -> str:

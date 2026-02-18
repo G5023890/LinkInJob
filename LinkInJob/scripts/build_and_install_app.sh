@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="/Users/grigorymordokhovich/Documents/Develop/LinkedIn/LinkInJob"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
 APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-LinkInJob}"
@@ -10,7 +11,7 @@ BUNDLE_ID="${BUNDLE_ID:-com.grigorym.LinkInJob}"
 APP_DIR="${APP_DIR:-dist/${APP_DISPLAY_NAME}.app}"
 INSTALL_DIR="${INSTALL_DIR:-/Applications/${APP_DISPLAY_NAME}.app}"
 LEGACY_INSTALL_DIR="${LEGACY_INSTALL_DIR:-/Applications/SelectedTextOverlay.app}"
-ICON_SOURCE="${ICON_SOURCE:-/Users/grigorymordokhovich/Documents/Develop/LinkedIn/assets/LinkedIn.icns}"
+ICON_SOURCE="${ICON_SOURCE:-$PROJECT_DIR/../assets/LinkedIn.icns}"
 SKIP_SIGN="${SKIP_SIGN:-0}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 RESOLVED_SIGN_IDENTITY=""

@@ -6,6 +6,7 @@ import Foundation
 final class AppViewModel: ObservableObject {
     private static let sortDefaultsKey = "app.sortOption"
     private static let sidebarDefaultsKey = "app.sidebarFilter"
+    private lazy var projectRootDirectory: String = Self.resolveProjectRootDirectory()
 
     enum SidebarFilter: Hashable {
         case stage(Stage)
@@ -98,9 +99,12 @@ final class AppViewModel: ObservableObject {
             return
         }
 
-        let projectDir = "/Users/grigorymordokhovich/Documents/Develop/LinkedIn"
+        let projectDir = projectRootDirectory
         let parserRunner = "\(projectDir)/parser/runner.py"
         let driveSyncScript = "\(projectDir)/scripts/sync_drive_rclone.sh"
+        let scriptsDirEscaped = "\(projectDir)/scripts"
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
 
         let driveSyncExit = await runCommand(
             launchPath: "/bin/bash",
@@ -125,10 +129,10 @@ final class AppViewModel: ObservableObject {
             .map { "Path('\($0)')" }
             .joined(separator: ", ")
 
-        let syncScript = """
+let syncScript = """
 import sys
 from pathlib import Path
-sys.path.insert(0, '/Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts')
+sys.path.insert(0, '\(scriptsDirEscaped)')
 from linkedin_applications_gui_sql import ApplicationsDB
 source_dirs = [\(sourceDirLiteral)]
 db_path = str(Path.home() / '.local' / 'share' / 'linkedin_apps' / 'applications.db')
@@ -391,7 +395,7 @@ conn.close()
             let exit = await runCommand(
                 launchPath: "/usr/bin/python3",
                 arguments: ["-c", script],
-                currentDirectory: "/Users/grigorymordokhovich/Documents/Develop/LinkedIn"
+                currentDirectory: projectRootDirectory
             )
             if exit != 0 {
                 syncStatusText = "Save failed"
@@ -436,7 +440,7 @@ conn.close()
             let exit = await runCommand(
                 launchPath: "/usr/bin/python3",
                 arguments: ["-c", script],
-                currentDirectory: "/Users/grigorymordokhovich/Documents/Develop/LinkedIn"
+                currentDirectory: projectRootDirectory
             )
             if exit != 0 {
                 syncStatusText = "Star save failed"
@@ -521,7 +525,7 @@ conn.close()
         _ = await runCommand(
             launchPath: "/usr/bin/python3",
             arguments: ["-c", script],
-            currentDirectory: "/Users/grigorymordokhovich/Documents/Develop/LinkedIn"
+            currentDirectory: projectRootDirectory
         )
     }
 
@@ -536,6 +540,36 @@ conn.close()
             var isDir: ObjCBool = false
             return fm.fileExists(atPath: $0, isDirectory: &isDir) && isDir.boolValue
         }
+    }
+
+    private static func resolveProjectRootDirectory() -> String {
+        let fm = FileManager.default
+
+        func looksLikeProjectRoot(_ path: String) -> Bool {
+            let scripts = (path as NSString).appendingPathComponent("scripts")
+            let parser = (path as NSString).appendingPathComponent("parser")
+            let app = (path as NSString).appendingPathComponent("LinkInJob")
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: scripts, isDirectory: &isDir) && isDir.boolValue
+                && fm.fileExists(atPath: parser, isDirectory: &isDir) && isDir.boolValue
+                && fm.fileExists(atPath: app, isDirectory: &isDir) && isDir.boolValue
+        }
+
+        if let env = ProcessInfo.processInfo.environment["LINKEDIN_PROJECT_DIR"], !env.isEmpty, looksLikeProjectRoot(env) {
+            return env
+        }
+
+        let cwd = fm.currentDirectoryPath
+        if looksLikeProjectRoot(cwd) {
+            return cwd
+        }
+
+        let homeCandidate = (NSHomeDirectory() as NSString).appendingPathComponent("Documents/Develop/LinkedIn")
+        if looksLikeProjectRoot(homeCandidate) {
+            return homeCandidate
+        }
+
+        return cwd
     }
 
     private func jobURLCandidates(from raw: String?) -> [URL] {
@@ -655,7 +689,7 @@ conn.close()
                 lastActivityDate: activity,
                 autoStage: autoStage,
                 manualStage: index % 7 == 0 ? .interview : nil,
-                sourceFilePath: "/Users/grigorymordokhovich/Desktop/CV/LinkedIn email/email_\(index).txt",
+                sourceFilePath: "\(NSHomeDirectory())/Desktop/CV/LinkedIn email/email_\(index).txt",
                 jobURL: index % 3 == 0 ? "https://www.linkedin.com/jobs/view/\(100_000 + index)" : nil,
                 descriptionText: descriptions[index % descriptions.count],
                 starred: index % 4 == 0

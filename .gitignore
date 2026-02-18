@@ -1,0 +1,15 @@
+.DS_Store
+
+# Build artifacts
+build/
+dist/
+snapshots/
+
+# SwiftPM / Xcode intermediates
+LinkInJob/.build/
+LinkInJob/.swiftpm/
+*.xcuserstate
+
+# Python caches
+__pycache__/
+*.pyc

@@ -9,76 +9,156 @@ struct DetailView: View {
     @State private var showFindField = false
 
     var body: some View {
-        Group {
-            if let item {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        HeaderCardView(item: item)
+        VStack(spacing: 0) {
+            detailHeader
+            Divider()
 
-                        if item.needsFollowUp {
-                            HStack(spacing: 8) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                Text("No reply \(item.daysSinceLastActivity) days - Follow-up suggested")
+            Group {
+                if let item {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            HeaderCardView(item: item)
+
+                            if item.needsFollowUp {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                    Text("No reply \(item.daysSinceLastActivity) days - Follow-up suggested")
+                                }
+                                .font(.subheadline)
+                                .foregroundStyle(.yellow)
+                                .padding(10)
+                                .background(.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
                             }
-                            .font(.subheadline)
-                            .foregroundStyle(.yellow)
-                            .padding(10)
-                            .background(.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
-                        }
 
-                        actionBar(item: item)
+                            actionBar(item: item)
 
-                        GroupBox("Activity") {
-                            TimelineView(events: viewModel.timeline(for: item))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                            GroupBox("Activity") {
+                                TimelineView(events: viewModel.timeline(for: item))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
 
-                        GroupBox {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    Text("Description")
-                                        .font(.headline)
-                                    Spacer()
-                                    Button("Copy") {
-                                        copyDescription(item)
+                            GroupBox {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack {
+                                        Text("Description")
+                                            .font(.headline)
+                                        Spacer()
+                                        Button("Copy") {
+                                            copyDescription(item)
+                                        }
+                                        Button("Find") {
+                                            showFindField.toggle()
+                                        }
+                                        Button("Original Link") {
+                                            viewModel.openJobLink(for: item)
+                                        }
+                                        .disabled(item.jobURL == nil || item.jobURL?.isEmpty == true)
                                     }
-                                    Button("Find") {
-                                        showFindField.toggle()
-                                    }
-                                    Button("Original Link") {
-                                        viewModel.openJobLink(for: item)
-                                    }
-                                    .disabled(item.jobURL == nil || item.jobURL?.isEmpty == true)
-                                }
 
-                                if showFindField {
-                                    TextField("Find in text", text: $descriptionQuery)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
-                                if let body = filteredDescription(for: item) {
-                                    ScrollView {
-                                        Text(body)
-                                            .font(.body)
-                                            .textSelection(.enabled)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .padding(.top, 2)
+                                    if showFindField {
+                                        TextField("Find in text", text: $descriptionQuery)
+                                            .textFieldStyle(.roundedBorder)
                                     }
-                                    .frame(maxHeight: 320)
-                                } else {
-                                    Text("No description available.")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+
+                                    if let body = filteredDescription(for: item) {
+                                        ScrollView {
+                                            Text(body)
+                                                .font(.body)
+                                                .textSelection(.enabled)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.top, 2)
+                                        }
+                                        .frame(maxHeight: 320)
+                                    } else {
+                                        Text("No description available.")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                             }
+                        }
+                        .padding(16)
+                    }
+                } else {
+                    ContentUnavailableView("Select an application", systemImage: "list.bullet.rectangle")
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var detailHeader: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                if let item {
+                    Text(item.company)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(item.role)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text("Job details")
+                        .font(.headline)
+                }
+            }
+            Spacer()
+            HStack(spacing: 8) {
+                Button {
+                    Task { await viewModel.loadFromBridge() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .frame(width: 28, height: 28)
+                .controlSize(.large)
+                .buttonStyle(.borderless)
+                .help("Refresh")
+
+                Button {
+                    Task { await viewModel.runProcessingPipeline() }
+                } label: {
+                    Image(systemName: viewModel.isSyncing ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.triangle.2.circlepath")
+                }
+                .frame(width: 28, height: 28)
+                .controlSize(.large)
+                .buttonStyle(.borderless)
+                .disabled(viewModel.isSyncing)
+                .help(viewModel.isSyncing ? "Syncing..." : "Sync")
+
+                Menu {
+                    Button("Open Job Link") {
+                        if let item {
+                            viewModel.openJobLink(for: item)
                         }
                     }
-                    .padding(16)
+                    .disabled(item == nil)
+                    .keyboardShortcut("o", modifiers: .command)
+
+                    Button("Open Source File") {
+                        if let item {
+                            viewModel.openSourceFile(for: item)
+                        }
+                    }
+                    .disabled(item == nil)
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                    Divider()
+                    Text(viewModel.dataSourceLabel)
+                        .foregroundStyle(.secondary)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-            } else {
-                ContentUnavailableView("Select an application", systemImage: "list.bullet.rectangle")
+                .frame(width: 28, height: 28)
+                .controlSize(.large)
+                .buttonStyle(.borderless)
+                .help("More")
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(minHeight: 48, maxHeight: 52)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     @ViewBuilder

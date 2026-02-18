@@ -3,78 +3,112 @@ import SwiftUI
 
 struct ApplicationListView: View {
     @EnvironmentObject private var viewModel: AppViewModel
-    @Binding var isSearchFocused: Bool
     @FocusState private var listFocused: Bool
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
-        List(selection: $viewModel.selectedItemID) {
-            ForEach(viewModel.filteredApplications) { item in
-                ApplicationRowView(item: item) {
-                    viewModel.toggleStar(for: item)
-                }
-                .tag(item.id)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    viewModel.selectedItemID = item.id
-                }
-                .simultaneousGesture(TapGesture(count: 2).onEnded {
-                    if item.jobURL != nil {
-                        viewModel.openJobLink(for: item)
-                    } else {
-                        viewModel.openSourceFile(for: item)
-                    }
-                })
-                .contextMenu {
-                    Menu("Set Stage") {
-                        ForEach(Stage.allCases, id: \.self) { stage in
-                            Button(stage.title) {
-                                viewModel.setStage(stage, for: item)
-                            }
-                        }
-                    }
+        VStack(spacing: 0) {
+            header
 
-                    if item.jobURL != nil {
-                        Button("Open Job Link") {
-                            viewModel.openJobLink(for: item)
-                        }
-                    }
+            Divider()
 
-                    Button("Open Source File") {
-                        viewModel.openSourceFile(for: item)
-                    }
-
-                    Button(item.starred ? "Unstar" : "Toggle Star") {
+            List(selection: $viewModel.selectedItemID) {
+                ForEach(viewModel.filteredApplications) { item in
+                    ApplicationRowView(item: item) {
                         viewModel.toggleStar(for: item)
                     }
+                    .tag(item.id)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        viewModel.selectedItemID = item.id
+                    }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        if item.jobURL != nil {
+                            viewModel.openJobLink(for: item)
+                        } else {
+                            viewModel.openSourceFile(for: item)
+                        }
+                    })
+                    .contextMenu {
+                        Menu("Set Stage") {
+                            ForEach(Stage.allCases, id: \.self) { stage in
+                                Button(stage.title) {
+                                    viewModel.setStage(stage, for: item)
+                                }
+                            }
+                        }
 
-                    Button("Reset to Auto") {
-                        viewModel.resetToAuto(for: item)
+                        if item.jobURL != nil {
+                            Button("Open Job Link") {
+                                viewModel.openJobLink(for: item)
+                            }
+                        }
+
+                        Button("Open Source File") {
+                            viewModel.openSourceFile(for: item)
+                        }
+
+                        Button(item.starred ? "Unstar" : "Toggle Star") {
+                            viewModel.toggleStar(for: item)
+                        }
+
+                        Button("Reset to Auto") {
+                            viewModel.resetToAuto(for: item)
+                        }
                     }
                 }
             }
-        }
-        .listStyle(.inset)
-        .focused($listFocused)
-        .background(
-            KeyCaptureView(isEnabled: listFocused && !isSearchFocused) { event in
-                guard let item = viewModel.selectedItem else { return }
-                switch event {
-                case .letter(let char):
-                    viewModel.handleListHotkey(String(char))
-                case .returnKey:
-                    if item.jobURL != nil {
-                        viewModel.openJobLink(for: item)
-                    } else {
+            .listStyle(.inset)
+            .focused($listFocused)
+            .background(
+                KeyCaptureView(isEnabled: listFocused && !searchFocused) { event in
+                    guard let item = viewModel.selectedItem else { return }
+                    switch event {
+                    case .letter(let char):
+                        viewModel.handleListHotkey(String(char))
+                    case .returnKey:
+                        if item.jobURL != nil {
+                            viewModel.openJobLink(for: item)
+                        } else {
+                            viewModel.openSourceFile(for: item)
+                        }
+                    case .space:
                         viewModel.openSourceFile(for: item)
                     }
-                case .space:
-                    viewModel.openSourceFile(for: item)
                 }
-            }
-        )
+            )
+        }
         .navigationTitle("Applications")
         .onAppear {
             listFocused = true
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Picker("Company filter", selection: $viewModel.sortOption) {
+                ForEach(AppViewModel.SortOption.allCases) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: 180, alignment: .leading)
+
+            TextField("Search company, role, location", text: $viewModel.searchText)
+                .textFieldStyle(.roundedBorder)
+                .focused($searchFocused)
+                .frame(maxWidth: 420, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 52, alignment: .leading)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .trailing) {
+            Button("Focus Search") {
+                searchFocused = true
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .hidden()
         }
     }
 }

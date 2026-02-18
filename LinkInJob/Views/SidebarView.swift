@@ -4,31 +4,44 @@ struct SidebarView: View {
     @EnvironmentObject private var viewModel: AppViewModel
 
     var body: some View {
-        ZStack {
-            Color(nsColor: .controlBackgroundColor)
-                .opacity(1)
-                .ignoresSafeArea()
-            List {
-                Section("Stages") {
-                    stageRow(.inbox, shortcut: "1")
-                    stageRow(.applied, shortcut: "2")
-                    stageRow(.interview, shortcut: "3")
-                    stageRow(.offer, shortcut: "4")
-                    stageRow(.rejected, shortcut: "5")
-                    stageRow(.archive, shortcut: "6")
-                }
-
-                Section("Smart Filters") {
-                    smartRow(.starred, count: viewModel.starredCount)
-                    smartRow(.noReply, count: viewModel.noReplyCount)
-                }
+        VStack(spacing: 0) {
+            HStack {
+                Text("Filters")
+                    .font(.headline)
+                Spacer()
             }
-            .scrollContentBackground(.hidden)
-            .listStyle(.sidebar)
-            .clipped()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 48, maxHeight: 52)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+            Divider()
+
+            ZStack {
+                Color(nsColor: .controlBackgroundColor)
+                    .opacity(1)
+                    .ignoresSafeArea()
+                List {
+                    Section("Stages") {
+                        stageRow(.inbox, shortcut: "1")
+                        stageRow(.applied, shortcut: "2")
+                        stageRow(.interview, shortcut: "3")
+                        stageRow(.offer, shortcut: "4")
+                        stageRow(.rejected, shortcut: "5")
+                        stageRow(.archive, shortcut: "6")
+                    }
+
+                    Section("Smart Filters") {
+                        smartRow(.starred, count: viewModel.starredCount)
+                        smartRow(.noReply, count: viewModel.noReplyCount)
+                    }
+                }
+                .scrollContentBackground(.hidden)
+                .listStyle(.sidebar)
+                .clipped()
+            }
         }
         .clipped()
-        .navigationTitle("Filters")
     }
 
     private func stageRow(_ stage: Stage, shortcut: KeyEquivalent) -> some View {

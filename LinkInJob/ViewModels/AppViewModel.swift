@@ -92,29 +92,57 @@ final class AppViewModel: ObservableObject {
         syncStatusText = "Syncing..."
         defer { isSyncing = false }
 
-        let sourceDir = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Application Support/DriveCVSync/LinkedIn email")
+        let sourceDirs = availableSourceDirectories()
+        guard !sourceDirs.isEmpty else {
+            syncStatusText = "No source folder"
+            return
+        }
+
         let projectDir = "/Users/grigorymordokhovich/Documents/Develop/LinkedIn"
         let parserRunner = "\(projectDir)/parser/runner.py"
+        let driveSyncScript = "\(projectDir)/scripts/sync_drive_rclone.sh"
 
-        let parserExit = await runCommand(
-            launchPath: "/usr/bin/python3",
-            arguments: [parserRunner, sourceDir],
+        let driveSyncExit = await runCommand(
+            launchPath: "/bin/bash",
+            arguments: [driveSyncScript],
             currentDirectory: projectDir
         )
+
+        var parserOk = true
+        for sourceDir in sourceDirs {
+            let parserExit = await runCommand(
+                launchPath: "/usr/bin/python3",
+                arguments: [parserRunner, sourceDir],
+                currentDirectory: projectDir
+            )
+            if parserExit != 0 {
+                parserOk = false
+            }
+        }
+
+        let sourceDirLiteral = sourceDirs
+            .map { $0.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'") }
+            .map { "Path('\($0)')" }
+            .joined(separator: ", ")
 
         let syncScript = """
 import sys
 from pathlib import Path
 sys.path.insert(0, '/Users/grigorymordokhovich/Documents/Develop/LinkedIn/scripts')
 from linkedin_applications_gui_sql import ApplicationsDB
-source_dir = Path('/Users/grigorymordokhovich/Library/Application Support/DriveCVSync/LinkedIn email')
+source_dirs = [\(sourceDirLiteral)]
 db_path = str(Path.home() / '.local' / 'share' / 'linkedin_apps' / 'applications.db')
 db = ApplicationsDB(db_path)
 try:
+    before = db.conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
     db.snapshot_non_incoming_statuses()
-    db.sync_source_dir(source_dir)
+    for source_dir in source_dirs:
+        if source_dir.exists():
+            db.sync_source_dir(source_dir)
     db.translate_existing_about_job_texts()
     db.conn.commit()
+    after = db.conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
+    print(after - before)
 finally:
     db.close()
 """
@@ -126,7 +154,7 @@ finally:
         )
 
         await loadFromBridge()
-        syncStatusText = (parserExit == 0 && syncExit == 0) ? "Synced" : "Sync failed"
+        syncStatusText = (driveSyncExit == 0 && parserOk && syncExit == 0) ? "Synced (\(sourceDirs.count) src)" : "Sync failed"
     }
 
     var selectedItem: ApplicationItem? {
@@ -148,7 +176,6 @@ finally:
                 $0.company.lowercased().contains(query)
                     || $0.role.lowercased().contains(query)
                     || $0.location.lowercased().contains(query)
-                    || $0.subject.lowercased().contains(query)
             }
         }
 
@@ -496,6 +523,19 @@ conn.close()
             arguments: ["-c", script],
             currentDirectory: "/Users/grigorymordokhovich/Documents/Develop/LinkedIn"
         )
+    }
+
+    private func availableSourceDirectories() -> [String] {
+        let home = NSHomeDirectory()
+        let candidates = [
+            "\(home)/Library/Application Support/DriveCVSync/LinkedIn email",
+            "\(home)/Library/Application Support/DriveCVSync/LinkedIn Archive"
+        ]
+        let fm = FileManager.default
+        return candidates.filter {
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: $0, isDirectory: &isDir) && isDir.boolValue
+        }
     }
 
     private func jobURLCandidates(from raw: String?) -> [URL] {

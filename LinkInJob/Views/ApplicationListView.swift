@@ -12,35 +12,59 @@ struct ApplicationListView: View {
 
             Divider()
 
-            ApplicationsTableView(
-                selectedItemID: $viewModel.selectedItemID,
-                items: viewModel.filteredApplications,
-                onSelect: { selected in
-                    viewModel.selectedItemID = selected?.id
-                },
-                onToggleStar: { item in
-                    viewModel.toggleStar(for: item)
-                },
-                onSetStage: { item, stage in
-                    viewModel.setStage(stage, for: item)
-                },
-                onOpenJobLink: { item in
-                    viewModel.openJobLink(for: item)
-                },
-                onOpenSourceFile: { item in
-                    viewModel.openSourceFile(for: item)
-                },
-                onResetToAuto: { item in
-                    viewModel.resetToAuto(for: item)
-                },
-                onOpenByDoubleClick: { item in
-                    if item.jobURL != nil {
-                        viewModel.openJobLink(for: item)
-                    } else {
-                        viewModel.openSourceFile(for: item)
+            List {
+                ForEach(viewModel.filteredApplications) { item in
+                    ApplicationRowView(
+                        item: item,
+                        isSelected: viewModel.selectedItemID == item.id,
+                        toggleStar: { viewModel.toggleStar(for: item) }
+                    )
+                    .contextMenu {
+                        Menu("Set Stage") {
+                            ForEach(Stage.allCases, id: \.self) { stage in
+                                Button(stage.title) {
+                                    viewModel.setStage(stage, for: item)
+                                }
+                            }
+                        }
+
+                        if item.jobURL != nil {
+                            Button("Open Job Link") {
+                                viewModel.openJobLink(for: item)
+                            }
+                        }
+
+                        Button("Open Source File") {
+                            viewModel.openSourceFile(for: item)
+                        }
+
+                        Button(item.starred ? "Unstar" : "Toggle Star") {
+                            viewModel.toggleStar(for: item)
+                        }
+
+                        Button("Reset to Auto") {
+                            viewModel.resetToAuto(for: item)
+                        }
                     }
+                    .onTapGesture {
+                        viewModel.selectedItemID = item.id
+                    }
+                    .onTapGesture(count: 2) {
+                        viewModel.selectedItemID = item.id
+                        if item.jobURL != nil {
+                            viewModel.openJobLink(for: item)
+                        } else {
+                            viewModel.openSourceFile(for: item)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 10, bottom: 2, trailing: 10))
+                    .listRowSeparator(.hidden)
                 }
-            )
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color(nsColor: .windowBackgroundColor))
             .background(
                 KeyCaptureView(isEnabled: listFocused && !searchFocused) { event in
                     guard let item = viewModel.selectedItem else { return }
@@ -67,22 +91,22 @@ struct ApplicationListView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Picker("Company filter", selection: $viewModel.sortOption) {
+            Picker("Sort", selection: $viewModel.sortOption) {
                 ForEach(AppViewModel.SortOption.allCases) { option in
                     Text(option.rawValue).tag(option)
                 }
             }
             .pickerStyle(.menu)
-            .frame(maxWidth: 180, alignment: .leading)
+            .frame(maxWidth: 220, alignment: .leading)
 
             TextField("Search company, role, location", text: $viewModel.searchText)
                 .textFieldStyle(.roundedBorder)
                 .focused($searchFocused)
-                .frame(maxWidth: 420, alignment: .leading)
+                .frame(maxWidth: 430, alignment: .leading)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 52, alignment: .leading)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .trailing) {
             Button("Focus Search") {

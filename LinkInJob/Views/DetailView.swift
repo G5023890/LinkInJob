@@ -9,97 +9,29 @@ struct DetailView: View {
     @State private var showFindField = false
     @State private var showOriginalDescription = false
 
+    private let cardCornerRadius: CGFloat = 12
+
     var body: some View {
         VStack(spacing: 0) {
-            detailHeader
+            detailToolbar
             Divider()
 
-            Group {
-                if let item {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HeaderCardView(item: item)
-
-                            if item.needsFollowUp {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                    Text("No reply \(item.daysSinceLastActivity) days - Follow-up suggested")
-                                }
-                                .font(.subheadline)
-                                .foregroundStyle(.yellow)
-                                .padding(10)
-                                .background(.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
-                            }
-
-                            actionBar(item: item)
-
-                            GroupBox("Activity") {
-                                TimelineView(events: viewModel.timeline(for: item))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            GroupBox {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    HStack {
-                                        Text("Description")
-                                            .font(.headline)
-                                        Spacer()
-                                        Button("Copy") {
-                                            copyDescription(item)
-                                        }
-                                        Button("Find") {
-                                            showFindField.toggle()
-                                        }
-                                        Button {
-                                            showOriginalDescription = false
-                                            viewModel.translateDescriptionToRussian(for: item)
-                                        } label: {
-                                            if viewModel.isDescriptionTranslating(for: item) {
-                                                Label("Перевод...", systemImage: "hourglass")
-                                            } else {
-                                                Text("Перевести на русский")
-                                            }
-                                        }
-                                        .disabled(!viewModel.canTranslateDescriptionToRussian(for: item) || viewModel.isDescriptionTranslating(for: item))
-                                        Button(showOriginalDescription ? "Show RU" : "Original") {
-                                            showOriginalDescription.toggle()
-                                        }
-                                        .disabled((item.originalDescriptionText ?? "").isEmpty)
-                                        Button("Original Link") {
-                                            viewModel.openJobLink(for: item)
-                                        }
-                                        .disabled(item.jobURL == nil || item.jobURL?.isEmpty == true)
-                                    }
-
-                                    if showFindField {
-                                        TextField("Find in text", text: $descriptionQuery)
-                                            .textFieldStyle(.roundedBorder)
-                                    }
-
-                                    if let body = filteredDescription(for: item) {
-                                        ScrollView {
-                                            Text(body)
-                                                .font(.body)
-                                                .textSelection(.enabled)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.top, 2)
-                                        }
-                                        .frame(maxHeight: 320)
-                                    } else {
-                                        Text("No description available.")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(16)
+            if let item {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        detailHeader(item)
+                        followUpBanner(item)
+                        actionBar(item)
+                        descriptionSection(item)
+                            .padding(.top, 10)
                     }
-                } else {
-                    ContentUnavailableView("Select an application", systemImage: "list.bullet.rectangle")
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 18)
                 }
+                .background(Color(nsColor: .windowBackgroundColor))
+            } else {
+                ContentUnavailableView("Select an application", systemImage: "list.bullet.rectangle")
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onChange(of: item?.id) { _, _ in
             showOriginalDescription = false
@@ -108,149 +40,239 @@ struct DetailView: View {
         }
     }
 
-    private var detailHeader: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                if let item {
-                    Text(item.company)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text(item.role)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                } else {
-                    Text("Job details")
-                        .font(.headline)
-                }
-            }
+    private var detailToolbar: some View {
+        HStack(spacing: 10) {
+            Text("Job Details")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
             Spacer()
-            HStack(spacing: 8) {
-                Button {
-                    Task { await viewModel.loadFromBridge() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .frame(width: 28, height: 28)
-                .controlSize(.large)
-                .buttonStyle(.borderless)
-                .help("Refresh")
 
-                Button {
-                    Task { await viewModel.runProcessingPipeline() }
-                } label: {
-                    Image(systemName: viewModel.isSyncing ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.triangle.2.circlepath")
-                }
-                .frame(width: 28, height: 28)
-                .controlSize(.large)
-                .buttonStyle(.borderless)
-                .disabled(viewModel.isSyncing)
-                .help(viewModel.isSyncing ? "Syncing..." : "Sync")
-
-                Menu {
-                    Button("Open Job Link") {
-                        if let item {
-                            viewModel.openJobLink(for: item)
-                        }
-                    }
-                    .disabled(item == nil)
-                    .keyboardShortcut("o", modifiers: .command)
-
-                    Button("Open Source File") {
-                        if let item {
-                            viewModel.openSourceFile(for: item)
-                        }
-                    }
-                    .disabled(item == nil)
-                    .keyboardShortcut("o", modifiers: [.command, .shift])
-
-                    Divider()
-                    Text(viewModel.dataSourceLabel)
-                        .foregroundStyle(.secondary)
-                    if !viewModel.syncStatusText.isEmpty {
-                        Text(viewModel.syncStatusText)
-                            .foregroundStyle(.secondary)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .frame(width: 28, height: 28)
-                .controlSize(.large)
-                .buttonStyle(.borderless)
-                .help("More")
-            }
             if !viewModel.syncStatusText.isEmpty {
                 Text(viewModel.syncStatusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+
+            Button {
+                Task { await viewModel.loadFromBridge() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .frame(width: 28, height: 28)
+            .controlSize(.large)
+            .buttonStyle(.borderless)
+            .help("Refresh")
+
+            Button {
+                Task { await viewModel.runProcessingPipeline() }
+            } label: {
+                Image(systemName: viewModel.isSyncing ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.triangle.2.circlepath")
+            }
+            .frame(width: 28, height: 28)
+            .controlSize(.large)
+            .buttonStyle(.borderless)
+            .disabled(viewModel.isSyncing)
+            .help(viewModel.isSyncing ? "Syncing..." : "Sync")
+
+            Menu {
+                Button("Open Job Link") {
+                    if let item {
+                        viewModel.openJobLink(for: item)
+                    }
+                }
+                .disabled(item?.jobURL == nil || item?.jobURL?.isEmpty == true)
+                .keyboardShortcut("o", modifiers: .command)
+
+                Button("Open Source File") {
+                    if let item {
+                        viewModel.openSourceFile(for: item)
+                    }
+                }
+                .disabled(item == nil)
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Divider()
+                Text(viewModel.dataSourceLabel)
+                    .foregroundStyle(.secondary)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .frame(width: 28, height: 28)
+            .controlSize(.large)
+            .buttonStyle(.borderless)
+            .help("More")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(minHeight: 48, maxHeight: 52)
+        .padding(.vertical, 10)
+        .frame(minHeight: 52)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
     @ViewBuilder
-    private func actionBar(item: ApplicationItem) -> some View {
-        HStack(spacing: 8) {
+    private func detailHeader(_ item: ApplicationItem) -> some View {
+        HStack(alignment: .top, spacing: 18) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(item.company)
+                    .font(.title.bold())
+                    .lineLimit(2)
+
+                Text(item.role)
+                    .font(.headline)
+                    .lineLimit(2)
+
+                Text(item.location)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                HStack(spacing: 12) {
+                    StatusPill(stage: item.effectiveStage)
+
+                    if let date = item.appliedDate ?? item.lastActivityDate {
+                        Text(date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("\(item.daysSinceLastActivity) days ago")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            compactActivitySection(item)
+                .frame(width: 290, alignment: .leading)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+        )
+    }
+
+    @ViewBuilder
+    private func followUpBanner(_ item: ApplicationItem) -> some View {
+        if item.needsFollowUp {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                Text("No reply \(item.daysSinceLastActivity) days — Follow-up suggested")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color(nsColor: .systemYellow).opacity(0.18),
+                in: RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func actionBar(_ item: ApplicationItem) -> some View {
+        HStack(spacing: 10) {
             Menu {
                 ForEach(Stage.allCases, id: \.self) { stage in
-                    Button(stage.title) { viewModel.setStage(stage, for: item) }
+                    Button(stage.title) {
+                        viewModel.setStage(stage, for: item)
+                    }
                 }
             } label: {
-                Label("Stage", systemImage: "line.3.horizontal.decrease.circle")
+                Label("Change Stage", systemImage: "arrow.triangle.2.circlepath")
             }
-            .menuStyle(.borderlessButton)
-
-            Button("Interview") {
-                viewModel.setStage(.interview, for: item)
-            }
-            .keyboardShortcut("i", modifiers: [])
-
-            Button("Reject") {
-                viewModel.setStage(.rejected, for: item)
-            }
-            .keyboardShortcut("r", modifiers: [])
+            .menuStyle(.button)
+            .buttonStyle(.borderedProminent)
 
             Button("Archive") {
                 viewModel.setStage(.archive, for: item)
             }
-            .keyboardShortcut("a", modifiers: [])
+            .buttonStyle(.bordered)
 
-            if item.needsFollowUp {
-                Button("Follow-up") {
-                    viewModel.copyFollowUp(for: item)
+            Button("Delete", role: .destructive) {
+                viewModel.delete(item: item)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    @ViewBuilder
+    private func compactActivitySection(_ item: ApplicationItem) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Activity")
+                .font(.headline)
+            TimelineView(events: viewModel.timeline(for: item), compact: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func descriptionSection(_ item: ApplicationItem) -> some View {
+        let text = filteredDescription(for: item) ?? ""
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Description")
+                    .font(.headline)
+                Spacer()
+                Menu {
+                    Button("Copy") { copyDescription(item) }
+
+                    Button(showFindField ? "Hide Find" : "Find") {
+                        showFindField.toggle()
+                    }
+
+                    Button {
+                        showOriginalDescription = false
+                        viewModel.translateDescriptionToRussian(for: item)
+                    } label: {
+                        if viewModel.isDescriptionTranslating(for: item) {
+                            Label("Translating…", systemImage: "hourglass")
+                        } else {
+                            Text("Translate to Russian")
+                        }
+                    }
+                    .disabled(!viewModel.canTranslateDescriptionToRussian(for: item) || viewModel.isDescriptionTranslating(for: item))
+
+                    Button(showOriginalDescription ? "Show Russian" : "Show Original") {
+                        showOriginalDescription.toggle()
+                    }
+                    .disabled((item.originalDescriptionText ?? "").isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-                .keyboardShortcut("f", modifiers: [])
+                .menuStyle(.borderlessButton)
+                .controlSize(.large)
             }
 
-            Menu {
-                if item.jobURL != nil {
-                    Button("Open Job Link") {
-                        viewModel.openJobLink(for: item)
-                    }
-                    .keyboardShortcut(.return, modifiers: [])
-                }
-                Button("Open Source File") {
-                    viewModel.openSourceFile(for: item)
-                }
-                .keyboardShortcut(.space, modifiers: [])
+            if showFindField {
+                TextField("Find in text", text: $descriptionQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 320, alignment: .leading)
+            }
 
-                Button(item.starred ? "Unstar" : "Star") {
-                    viewModel.toggleStar(for: item)
-                }
-                .keyboardShortcut("s", modifiers: [])
-
-                Button("Reset to Auto") {
-                    viewModel.resetToAuto(for: item)
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
+            if text.isEmpty {
+                Text("No description available.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(text)
+                    .font(.body)
+                    .lineSpacing(4)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 760, alignment: .leading)
             }
         }
-        .buttonStyle(.bordered)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+        )
     }
 
     private func copyDescription(_ item: ApplicationItem) {
@@ -266,11 +288,9 @@ struct DetailView: View {
 
         let lines = text.components(separatedBy: .newlines)
             .filter { $0.localizedCaseInsensitiveContains(descriptionQuery) }
-
         if lines.isEmpty {
             return "No matches for \"\(descriptionQuery)\"."
         }
-
         return lines.joined(separator: "\n")
     }
 

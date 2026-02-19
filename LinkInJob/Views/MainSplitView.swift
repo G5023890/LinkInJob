@@ -2,26 +2,31 @@ import SwiftUI
 
 struct MainSplitView: View {
     @EnvironmentObject private var viewModel: AppViewModel
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        HSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
-                .frame(minWidth: 200, idealWidth: 240, maxWidth: 280)
-
+                .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .overlay(alignment: .trailing) { Divider() }
+        } content: {
             ApplicationListView()
-                .frame(minWidth: 380, idealWidth: 420, maxWidth: 520)
-
+                .navigationSplitViewColumnWidth(min: 380, ideal: 430, max: 560)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .overlay(alignment: .trailing) { Divider() }
+        } detail: {
             DetailView(item: viewModel.selectedItem)
-                .frame(minWidth: 480, maxWidth: .infinity)
+                .navigationSplitViewColumnWidth(min: 480, ideal: 640)
+                .background(Color(nsColor: .windowBackgroundColor))
         }
-        .background(
-            SplitViewAutosaveInstaller(autosaveName: "LinkInJob.MainSplitView")
-        )
+        .navigationSplitViewStyle(.balanced)
         .background(
             WindowFrameAutosaveInstaller(autosaveName: "LinkInJob.MainWindow")
         )
         .frame(minWidth: 1080, minHeight: 720)
         .task {
+            columnVisibility = .all
             await viewModel.loadFromBridge()
         }
     }

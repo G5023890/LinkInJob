@@ -15,6 +15,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from urllib.error import HTTPError
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -106,7 +107,11 @@ class ApplicationsDB:
         self.job_cache: dict[str, tuple[str, str, str, str]] = {}
         self.translation_cache: dict[str, str] = {}
         self.google_translate_blocked = False
-        self.translate_provider = TRANSLATE_PROVIDER if TRANSLATE_PROVIDER in {"google_unofficial", "google_api"} else "google_unofficial"
+        self.translate_provider = (
+            TRANSLATE_PROVIDER
+            if TRANSLATE_PROVIDER in {"google_unofficial", "google_api", "argos_local"}
+            else "google_unofficial"
+        )
         self.google_translate_api_key = GOOGLE_TRANSLATE_API_KEY
         self._init_schema()
 
@@ -687,8 +692,16 @@ class ApplicationsDB:
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=15) as response:
-            payload_text = response.read().decode("utf-8", errors="ignore")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                payload_text = response.read().decode("utf-8", errors="ignore")
+        except HTTPError as exc:
+            details = ""
+            try:
+                details = exc.read().decode("utf-8", errors="ignore")
+            except Exception:
+                details = str(exc)
+            raise RuntimeError(f"Google API error {exc.code}: {details[:400]}") from exc
         data = json.loads(payload_text)
         translated = (
             data.get("data", {}).get("translations", [{}])[0].get("translatedText", "")
@@ -706,6 +719,34 @@ class ApplicationsDB:
         if re.search(r"[А-Яа-яЁё]", text):
             return "ru"
         return "en"
+
+    @staticmethod
+    def _guess_source_langs_for_argos(text: str) -> list[str]:
+        if re.search(r"[\u0590-\u05FF]", text):
+            return ["he", "en"]
+        if re.search(r"[\u0600-\u06FF]", text):
+            return ["ar", "en"]
+        if re.search(r"[А-Яа-яЁё]", text):
+            return ["ru"]
+        return ["en", "de", "fr", "es", "pt", "it"]
+
+    @staticmethod
+    def _contains_hebrew_or_arabic(text: str) -> bool:
+        return bool(re.search(r"[\u0590-\u05FF\u0600-\u06FF]", text or ""))
+
+    def _translation_looks_successful(self, source: str, translated: str) -> bool:
+        src = self._normalize_inline(source)
+        out = self._normalize_inline(translated)
+        if not out:
+            return False
+        if src == out:
+            return False
+        if self._looks_russian(out):
+            return True
+        # For Hebrew/Arabic source, we expect at least some Cyrillic in RU output.
+        if self._contains_hebrew_or_arabic(src) and not self._looks_russian(out):
+            return False
+        return True
 
     def _translate_chunk_google_unofficial(self, chunk: str) -> str:
         payload = urllib.parse.urlencode(
@@ -767,7 +808,52 @@ class ApplicationsDB:
             return translated_text
         raise RuntimeError("MyMemory translate returned empty result")
 
-    def _translate_fragment_to_russian(self, fragment: str) -> str:
+    def _translate_chunk_argos_local(self, chunk: str) -> str:
+        try:
+            import argostranslate.translate as argos_translate
+        except Exception as exc:
+            raise RuntimeError(
+                "Argos Translate package is not installed. Install: python3 -m pip install argostranslate"
+            ) from exc
+
+        installed_languages = argos_translate.get_installed_languages()
+        if not installed_languages:
+            raise RuntimeError("Argos Translate has no installed language models.")
+
+        languages_by_code = {lang.code: lang for lang in installed_languages}
+        target = languages_by_code.get("ru")
+        if target is None:
+            raise RuntimeError("Argos Translate model for target language 'ru' is not installed.")
+
+        source_codes = self._guess_source_langs_for_argos(chunk)
+        for code in source_codes:
+            if code == "ru":
+                return chunk
+            source = languages_by_code.get(code)
+            if source is None:
+                continue
+            try:
+                translated = source.get_translation(target).translate(chunk)
+                normalized = self._normalize_inline(translated)
+                if normalized:
+                    return normalized
+            except Exception:
+                continue
+
+        for source in installed_languages:
+            if source.code == "ru":
+                continue
+            try:
+                translated = source.get_translation(target).translate(chunk)
+                normalized = self._normalize_inline(translated)
+                if normalized:
+                    return normalized
+            except Exception:
+                continue
+
+        raise RuntimeError("Argos Translate failed: no suitable local source->ru model installed.")
+
+    def _translate_fragment_to_russian(self, fragment: str, strict: bool = False) -> str:
         normalized = self._normalize_inline(fragment)
         if not normalized or not TRANSLATE_TO_RU:
             return fragment
@@ -803,7 +889,11 @@ class ApplicationsDB:
             provider_order = (
                 ["google_api", "google_unofficial", "mymemory"]
                 if self.translate_provider == "google_api"
-                else ["google_unofficial", "google_api", "mymemory"]
+                else (
+                    ["argos_local", "google_api", "google_unofficial", "mymemory"]
+                    if self.translate_provider == "argos_local"
+                    else ["google_unofficial", "google_api", "mymemory"]
+                )
             )
 
             for provider in provider_order:
@@ -811,11 +901,25 @@ class ApplicationsDB:
                     if provider == "google_api":
                         if not self.google_translate_api_key:
                             continue
-                        return self._translate_chunk_google_api(chunk)
+                        candidate = self._translate_chunk_google_api(chunk)
+                        if self._translation_looks_successful(chunk, candidate):
+                            return candidate
+                        raise RuntimeError("Google API returned non-RU or unchanged text")
                     if provider == "google_unofficial":
-                        return self._translate_chunk_google_unofficial(chunk)
+                        candidate = self._translate_chunk_google_unofficial(chunk)
+                        if self._translation_looks_successful(chunk, candidate):
+                            return candidate
+                        raise RuntimeError("Google unofficial returned non-RU or unchanged text")
+                    if provider == "argos_local":
+                        candidate = self._translate_chunk_argos_local(chunk)
+                        if self._translation_looks_successful(chunk, candidate):
+                            return candidate
+                        raise RuntimeError("Argos local returned non-RU or unchanged text")
                     if provider == "mymemory":
-                        return self._translate_chunk_mymemory(chunk)
+                        candidate = self._translate_chunk_mymemory(chunk)
+                        if self._translation_looks_successful(chunk, candidate):
+                            return candidate
+                        raise RuntimeError("MyMemory returned non-RU or unchanged text")
                 except Exception as exc:
                     errors.append(exc)
                     continue
@@ -827,13 +931,15 @@ class ApplicationsDB:
         try:
             translated_parts = [translate_chunk(chunk) for chunk in split_chunks(normalized)]
             result = " ".join(part for part in translated_parts if part).strip() or fragment
-        except Exception:
+        except Exception as exc:
+            if strict:
+                raise RuntimeError(f"Translation failed: {exc}") from exc
             result = fragment
 
         self.translation_cache[normalized] = result
         return result
 
-    def translate_to_russian(self, text: str) -> str:
+    def translate_to_russian(self, text: str, strict: bool = False) -> str:
         if not text or not TRANSLATE_TO_RU:
             return text
         normalized = text.strip()
@@ -859,7 +965,7 @@ class ApplicationsDB:
         if current:
             chunks.append(current)
 
-        translated = [self._translate_fragment_to_russian(chunk) for chunk in chunks]
+        translated = [self._translate_fragment_to_russian(chunk, strict=strict) for chunk in chunks]
         result = "\n\n".join(part for part in translated if part).strip()
         return result or text
 

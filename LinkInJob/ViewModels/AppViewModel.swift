@@ -9,6 +9,12 @@ final class AppViewModel: ObservableObject {
     private static let translationMethodDefaultsKey = "app.translationMethod"
     private static let googleTranslateAPIKeyLegacyDefaultsKey = "app.googleTranslateAPIKey"
     private lazy var projectRootDirectory: String = Self.resolveProjectRootDirectory()
+    private lazy var sharedArgosBaseDirectory: String = (NSHomeDirectory() as NSString)
+        .appendingPathComponent("Library/Application Support/ArgosTranslate")
+    private lazy var sharedArgosPythonLibDirectory: String = (sharedArgosBaseDirectory as NSString)
+        .appendingPathComponent("python_lib")
+    private lazy var sharedArgosPackagesDirectory: String = (sharedArgosBaseDirectory as NSString)
+        .appendingPathComponent("packages")
     private let keychainStore = KeychainStore(
         service: "com.grigorymordokhovich.LinkInJob",
         account: "google_translate_api_key"
@@ -53,6 +59,7 @@ final class AppViewModel: ObservableObject {
     enum TranslationMethod: String, CaseIterable, Identifiable {
         case googleUnofficial = "google_unofficial"
         case googleAPI = "google_api"
+        case argosLocal = "argos_local"
 
         var id: String { rawValue }
 
@@ -62,6 +69,8 @@ final class AppViewModel: ObservableObject {
                 return "Google Free"
             case .googleAPI:
                 return "Google Cloud API"
+            case .argosLocal:
+                return "Argos Translate (Local)"
             }
         }
     }
@@ -386,6 +395,12 @@ finally:
         persistStar(for: updated.id, starred: updated.starred)
     }
 
+    func delete(item: ApplicationItem) {
+        applications.removeAll { $0.id == item.id }
+        ensureSelectionIsVisible()
+        persistDelete(for: item)
+    }
+
     func openJobLink(for item: ApplicationItem) {
         let candidates = jobURLCandidates(from: item.jobURL)
         guard !candidates.isEmpty else {
@@ -460,6 +475,7 @@ finally:
         let script = """
 import base64
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -474,9 +490,13 @@ source_file = '\(sourceFileEscaped)'
 link_url = '\(linkEscaped)'
 
 try:
-    translated = db.translate_to_russian(source_text)
-    if not translated:
-        translated = source_text
+    translated = db.translate_to_russian(source_text, strict=True)
+    source_norm = source_text.strip()
+    translated_norm = (translated or '').strip()
+    if not translated_norm:
+        raise RuntimeError('Empty translation result')
+    if source_norm == translated_norm and re.search(r'[\\u0590-\\u05FF\\u0600-\\u06FF]', source_norm):
+        raise RuntimeError('Translation unchanged for Hebrew/Arabic source text')
 
     cur = db.conn.cursor()
     row = None
@@ -499,7 +519,7 @@ try:
     if row is not None:
         row_id, about_en, _about_ru = row
         about_en = about_en or source_text
-        about_ru = translated
+        about_ru = translated_norm
         display_text = about_ru or about_en
         cur.execute(
             \"\"\"UPDATE applications
@@ -509,7 +529,9 @@ try:
         )
         db.conn.commit()
 
-    print(json.dumps({'translated': translated}, ensure_ascii=False))
+    print(json.dumps({'translated': translated_norm, 'error': ''}, ensure_ascii=False))
+except Exception as exc:
+    print(json.dumps({'translated': '', 'error': str(exc)}, ensure_ascii=False))
 finally:
     db.close()
 """
@@ -528,7 +550,12 @@ finally:
                 return
             }
 
-            guard let translated = parseTranslatedDescription(from: output), !translated.isEmpty else {
+            let result = parseTranslationResult(from: output)
+            if let error = result.error, !error.isEmpty {
+                syncStatusText = "Ошибка перевода: \(error)"
+                return
+            }
+            guard let translated = result.translated, !translated.isEmpty else {
                 syncStatusText = "Перевод не получен"
                 return
             }
@@ -611,27 +638,37 @@ finally:
         return nil
     }
 
-    private func parseTranslatedDescription(from output: String) -> String? {
+    private func parseTranslationResult(from output: String) -> (translated: String?, error: String?) {
         let lines = output
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         guard let lastLine = lines.last, let data = lastLine.data(using: .utf8) else {
-            return nil
+            return (nil, "No translation payload")
         }
         guard
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let translated = json["translated"] as? String
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return nil
+            return (nil, "Invalid translation payload")
         }
-        return translated.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translated = (json["translated"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let error = (json["error"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (translated, error)
     }
 
     private func translationEnvironment() -> [String: String] {
         var env: [String: String] = ["LINKINJOB_TRANSLATE_PROVIDER": translationMethod.rawValue]
         if !googleTranslateAPIKey.isEmpty {
             env["LINKINJOB_GOOGLE_TRANSLATE_API_KEY"] = googleTranslateAPIKey
+        }
+        if translationMethod == .argosLocal {
+            env["ARGOS_PACKAGES_DIR"] = sharedArgosPackagesDirectory
+            let basePythonPath = ProcessInfo.processInfo.environment["PYTHONPATH"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if basePythonPath.isEmpty {
+                env["PYTHONPATH"] = sharedArgosPythonLibDirectory
+            } else {
+                env["PYTHONPATH"] = "\(sharedArgosPythonLibDirectory):\(basePythonPath)"
+            }
         }
         return env
     }
@@ -778,6 +815,46 @@ conn.close()
             )
             if exit != 0 {
                 syncStatusText = "Star save failed"
+            }
+        }
+    }
+
+    private func persistDelete(for item: ApplicationItem) {
+        let source = item.sourceFilePath.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+        let link = (item.jobURL ?? "").replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+        let dbIDLiteral = item.dbID.map(String.init) ?? "None"
+
+        let script = """
+import sqlite3
+from pathlib import Path
+db_path = str(Path.home() / '.local' / 'share' / 'linkedin_apps' / 'applications.db')
+conn = sqlite3.connect(db_path)
+cur = conn.cursor()
+db_id = \(dbIDLiteral)
+source = '\(source)'
+link = '\(link)'
+if db_id is not None:
+    cur.execute("DELETE FROM applications WHERE id = ?", (db_id,))
+else:
+    cur.execute(\"\"\"DELETE FROM applications
+WHERE id = (
+    SELECT id FROM applications
+    WHERE source_file = ? AND COALESCE(link_url, '') = ?
+    ORDER BY id DESC LIMIT 1
+)\"\"\", (source, link))
+cur.execute("DELETE FROM status_pins WHERE record_key NOT IN (SELECT record_key FROM applications)")
+conn.commit()
+conn.close()
+"""
+
+        Task {
+            let exit = await runCommand(
+                launchPath: "/usr/bin/python3",
+                arguments: ["-c", script],
+                currentDirectory: projectRootDirectory
+            )
+            if exit != 0 {
+                syncStatusText = "Delete failed"
             }
         }
     }

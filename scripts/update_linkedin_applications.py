@@ -12,7 +12,7 @@ HOME = Path.home()
 ICLOUD_ROOT = HOME / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "M.Greg"
 WORK_ROOT = ICLOUD_ROOT / "Работа"
 
-DEFAULT_SOURCE_DIR = HOME / "Desktop" / "CV" / "LinkedIn email"
+DEFAULT_SOURCE_DIR = HOME / "Library" / "Application Support" / "DriveCVSync" / "LinkedIn Archive"
 DEFAULT_TARGET_FILE = WORK_ROOT / "Поданные и откланенные заявки" / "System_Administrator.md"
 DEFAULT_VACANCIES_FILE = WORK_ROOT / "LinkedIn" / "Компания.md"
 DEFAULT_COMPANY_DIR = WORK_ROOT / "LinkedIn"

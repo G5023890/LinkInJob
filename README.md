@@ -41,7 +41,7 @@ python3 scripts/update_linkedin_applications.py
 
 By default, it reads emails from:
 
-`$HOME/Desktop/CV/LinkedIn email`
+`$HOME/Library/Application Support/DriveCVSync/LinkedIn Archive`
 
 and writes to:
 
@@ -85,7 +85,7 @@ Run GUI:
 
 ```bash
 python3 scripts/linkedin_applications_gui_sql.py \
-  --source-dir "$HOME/Desktop/CV/LinkedIn email"
+  --source-dir "$HOME/Library/Application Support/DriveCVSync/LinkedIn Archive"
 ```
 
 What it does:

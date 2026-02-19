@@ -14,6 +14,12 @@ struct MainSplitView: View {
             DetailView(item: viewModel.selectedItem)
                 .frame(minWidth: 480, maxWidth: .infinity)
         }
+        .background(
+            SplitViewAutosaveInstaller(autosaveName: "LinkInJob.MainSplitView")
+        )
+        .background(
+            WindowFrameAutosaveInstaller(autosaveName: "LinkInJob.MainWindow")
+        )
         .frame(minWidth: 1080, minHeight: 720)
         .task {
             await viewModel.loadFromBridge()

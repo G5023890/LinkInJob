@@ -22,6 +22,17 @@ struct PythonBridge {
         }
 
         let hasStarred = hasColumn(db: db, table: "applications", column: "starred")
+        let hasAboutEn = hasColumn(db: db, table: "applications", column: "about_job_text_en")
+        let hasAboutRu = hasColumn(db: db, table: "applications", column: "about_job_text_ru")
+        let displayDescriptionExpr: String
+        let originalDescriptionExpr: String
+        if hasAboutEn && hasAboutRu {
+            displayDescriptionExpr = "COALESCE(NULLIF(about_job_text_ru, ''), NULLIF(about_job_text, ''), NULLIF(about_job_text_en, ''))"
+            originalDescriptionExpr = "COALESCE(NULLIF(about_job_text_en, ''), NULLIF(about_job_text, ''))"
+        } else {
+            displayDescriptionExpr = "about_job_text"
+            originalDescriptionExpr = "about_job_text"
+        }
 
         let query = """
         SELECT
@@ -37,7 +48,8 @@ struct PythonBridge {
             manual_status,
             COALESCE(current_status, ''),
             link_url,
-            about_job_text\(hasStarred ? ", COALESCE(starred, 0)" : "")
+            \(displayDescriptionExpr),
+            \(originalDescriptionExpr)\(hasStarred ? ", COALESCE(starred, 0)" : "")
         FROM applications
         WHERE NOT (
             COALESCE(current_status, '') = 'manual_sort'
@@ -66,7 +78,8 @@ struct PythonBridge {
             let manualStage = mapStatusToStageOptional(stringValue(statement, index: 9))
             let jobURL = stringValue(statement, index: 11)
             let descriptionText = stringValue(statement, index: 12)
-            let starred = hasStarred ? (intValue(statement, index: 13) ?? 0) != 0 : false
+            let originalDescriptionText = stringValue(statement, index: 13)
+            let starred = hasStarred ? (intValue(statement, index: 14) ?? 0) != 0 : false
 
             items.append(
                 ApplicationItem(
@@ -83,6 +96,7 @@ struct PythonBridge {
                     sourceFilePath: sourceFile,
                     jobURL: jobURL?.isEmpty == true ? nil : jobURL,
                     descriptionText: descriptionText?.isEmpty == true ? nil : descriptionText,
+                    originalDescriptionText: originalDescriptionText?.isEmpty == true ? nil : originalDescriptionText,
                     starred: starred
                 )
             )

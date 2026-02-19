@@ -12,6 +12,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -68,6 +69,11 @@ STATUS_TITLE = {
 DRIVE_FOLDER_ID = "1edFf52mpJVSJcOYuP8ACLKX_T64g21Tn"
 DRIVE_REMOTE = os.getenv("LINKEDIN_DRIVE_REMOTE", "gdrive_cv")
 TRANSLATE_TO_RU = os.getenv("LINKEDIN_TRANSLATE_TO_RU", "1").strip().lower() not in {"0", "false", "no", "off"}
+TRANSLATE_PROVIDER = os.getenv("LINKINJOB_TRANSLATE_PROVIDER", "google_unofficial").strip().lower()
+GOOGLE_TRANSLATE_API_KEY = (
+    os.getenv("LINKINJOB_GOOGLE_TRANSLATE_API_KEY", "")
+    or os.getenv("GOOGLE_TRANSLATE_API_KEY", "")
+).strip()
 
 
 @dataclass
@@ -86,6 +92,8 @@ class ApplicationRow:
     current_status: str
     body: str
     about_job_text: str
+    about_job_text_en: str
+    about_job_text_ru: str
 
 
 class ApplicationsDB:
@@ -97,6 +105,9 @@ class ApplicationsDB:
         self.conn = sqlite3.connect(self.db_path)
         self.job_cache: dict[str, tuple[str, str, str, str]] = {}
         self.translation_cache: dict[str, str] = {}
+        self.google_translate_blocked = False
+        self.translate_provider = TRANSLATE_PROVIDER if TRANSLATE_PROVIDER in {"google_unofficial", "google_api"} else "google_unofficial"
+        self.google_translate_api_key = GOOGLE_TRANSLATE_API_KEY
         self._init_schema()
 
     def close(self) -> None:
@@ -115,7 +126,7 @@ class ApplicationsDB:
                     """
                     SELECT
                         source_file, file_name, email_date, subject, company, role,
-                        '', COALESCE(link_url, ''), COALESCE(about_job_text, ''),
+                        '', COALESCE(link_url, ''), COALESCE(about_job_text, ''), '', '',
                         auto_status, manual_status, current_status, body
                     FROM applications
                     """
@@ -136,6 +147,8 @@ class ApplicationsDB:
                 location TEXT,
                 link_url TEXT,
                 about_job_text TEXT,
+                about_job_text_en TEXT,
+                about_job_text_ru TEXT,
                 auto_status TEXT NOT NULL,
                 manual_status TEXT,
                 current_status TEXT NOT NULL,
@@ -157,6 +170,8 @@ class ApplicationsDB:
             """
         )
         self._ensure_column("applications", "location", "TEXT")
+        self._ensure_column("applications", "about_job_text_en", "TEXT")
+        self._ensure_column("applications", "about_job_text_ru", "TEXT")
 
         if legacy_rows:
             cur = self.conn.cursor()
@@ -167,12 +182,45 @@ class ApplicationsDB:
                     """
                     INSERT OR IGNORE INTO applications(
                         record_key, source_file, file_name, email_date, subject, company, role, location, link_url, about_job_text,
-                        auto_status, manual_status, current_status, body
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        about_job_text_en, about_job_text_ru, auto_status, manual_status, current_status, body
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (record_key, *row),
                 )
+        self._migrate_description_columns()
         self.conn.commit()
+
+    def _migrate_description_columns(self) -> None:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT id, COALESCE(about_job_text, ''), COALESCE(about_job_text_en, ''), COALESCE(about_job_text_ru, '')
+            FROM applications
+            """
+        )
+        for app_id, legacy_text, text_en, text_ru in cur.fetchall():
+            legacy = str(legacy_text or "").strip()
+            en_val = str(text_en or "").strip()
+            ru_val = str(text_ru or "").strip()
+            if not legacy:
+                continue
+            if not en_val and not ru_val:
+                if self._looks_russian(legacy):
+                    ru_val = legacy
+                else:
+                    en_val = legacy
+            elif not en_val and not self._looks_russian(legacy):
+                en_val = legacy
+            elif not ru_val and self._looks_russian(legacy):
+                ru_val = legacy
+            cur.execute(
+                """
+                UPDATE applications
+                SET about_job_text_en = ?, about_job_text_ru = ?
+                WHERE id = ?
+                """,
+                (en_val, ru_val, int(app_id)),
+            )
 
     def _table_exists(self, table: str) -> bool:
         cur = self.conn.cursor()
@@ -618,6 +666,107 @@ class ApplicationsDB:
         cyr = re.findall(r"[А-Яа-яЁё]", text)
         return (len(cyr) / max(1, len(letters))) >= 0.2
 
+    def _translate_chunk_google_api(self, chunk: str) -> str:
+        if not self.google_translate_api_key:
+            raise RuntimeError("Google Cloud Translate API key is missing.")
+
+        payload = urllib.parse.urlencode(
+            {
+                "q": chunk,
+                "target": "ru",
+                "format": "text",
+                "key": self.google_translate_api_key,
+            }
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            "https://translation.googleapis.com/language/translate/v2",
+            data=payload,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            payload_text = response.read().decode("utf-8", errors="ignore")
+        data = json.loads(payload_text)
+        translated = (
+            data.get("data", {}).get("translations", [{}])[0].get("translatedText", "")
+            if isinstance(data, dict) else ""
+        )
+        translated_text = html.unescape(str(translated)).strip()
+        return translated_text or chunk
+
+    @staticmethod
+    def _guess_source_lang_for_mymemory(text: str) -> str:
+        if re.search(r"[\u0590-\u05FF]", text):
+            return "he"
+        if re.search(r"[\u0600-\u06FF]", text):
+            return "ar"
+        if re.search(r"[А-Яа-яЁё]", text):
+            return "ru"
+        return "en"
+
+    def _translate_chunk_google_unofficial(self, chunk: str) -> str:
+        payload = urllib.parse.urlencode(
+            {
+                "client": "gtx",
+                "sl": "auto",
+                "tl": "ru",
+                "dt": "t",
+                "q": chunk,
+            }
+        ).encode("utf-8")
+        last_error: Exception | None = None
+        if not self.google_translate_blocked:
+            for attempt in range(3):
+                try:
+                    time.sleep(0.08)
+                    req = urllib.request.Request(
+                        "https://translate.googleapis.com/translate_a/single",
+                        data=payload,
+                        headers={
+                            "User-Agent": "Mozilla/5.0",
+                            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        },
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=8) as response:
+                        payload_text = response.read().decode("utf-8", errors="ignore")
+                    data = json.loads(payload_text)
+                    chunks_data = data[0] if isinstance(data, list) and data else []
+                    translated = "".join(
+                        str(chunk_data[0]) for chunk_data in chunks_data if isinstance(chunk_data, list) and chunk_data and chunk_data[0]
+                    ).strip()
+                    return translated or chunk
+                except Exception as exc:
+                    last_error = exc
+                    if "429" in str(exc):
+                        self.google_translate_blocked = True
+                        break
+                    if attempt < 2:
+                        time.sleep(0.25 * (attempt + 1))
+                        continue
+                    break
+        raise last_error if last_error else RuntimeError("Google unofficial translate failed")
+
+    def _translate_chunk_mymemory(self, chunk: str) -> str:
+        src_lang = self._guess_source_lang_for_mymemory(chunk)
+        q = urllib.parse.urlencode({"q": chunk, "langpair": f"{src_lang}|ru"})
+        url = f"https://api.mymemory.translated.net/get?{q}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=12) as response:
+            payload_text = response.read().decode("utf-8", errors="ignore")
+        data = json.loads(payload_text)
+        translated = (
+            data.get("responseData", {}).get("translatedText", "")
+            if isinstance(data, dict) else ""
+        )
+        translated_text = html.unescape(str(translated)).strip()
+        if translated_text:
+            return translated_text
+        raise RuntimeError("MyMemory translate returned empty result")
+
     def _translate_fragment_to_russian(self, fragment: str) -> str:
         normalized = self._normalize_inline(fragment)
         if not normalized or not TRANSLATE_TO_RU:
@@ -630,26 +779,54 @@ class ApplicationsDB:
         if cached is not None:
             return cached
 
-        try:
-            query = urllib.parse.urlencode(
-                {
-                    "client": "gtx",
-                    "sl": "auto",
-                    "tl": "ru",
-                    "dt": "t",
-                    "q": normalized,
-                }
+        def split_chunks(text: str, max_len: int = 450) -> list[str]:
+            if len(text) <= max_len:
+                return [text]
+            chunks: list[str] = []
+            current = ""
+            for word in text.split():
+                if not current:
+                    current = word
+                    continue
+                if len(current) + 1 + len(word) <= max_len:
+                    current += " " + word
+                else:
+                    chunks.append(current)
+                    current = word
+            if current:
+                chunks.append(current)
+            return chunks or [text]
+
+        def translate_chunk(chunk: str) -> str:
+            errors: list[Exception] = []
+
+            provider_order = (
+                ["google_api", "google_unofficial", "mymemory"]
+                if self.translate_provider == "google_api"
+                else ["google_unofficial", "google_api", "mymemory"]
             )
-            url = f"https://translate.googleapis.com/translate_a/single?{query}"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=30) as response:
-                payload = response.read().decode("utf-8", errors="ignore")
-            data = json.loads(payload)
-            chunks = data[0] if isinstance(data, list) and data else []
-            translated = "".join(
-                str(chunk[0]) for chunk in chunks if isinstance(chunk, list) and chunk and chunk[0]
-            ).strip()
-            result = translated or fragment
+
+            for provider in provider_order:
+                try:
+                    if provider == "google_api":
+                        if not self.google_translate_api_key:
+                            continue
+                        return self._translate_chunk_google_api(chunk)
+                    if provider == "google_unofficial":
+                        return self._translate_chunk_google_unofficial(chunk)
+                    if provider == "mymemory":
+                        return self._translate_chunk_mymemory(chunk)
+                except Exception as exc:
+                    errors.append(exc)
+                    continue
+
+            if errors:
+                raise errors[-1]
+            raise RuntimeError("Translation failed")
+
+        try:
+            translated_parts = [translate_chunk(chunk) for chunk in split_chunks(normalized)]
+            result = " ".join(part for part in translated_parts if part).strip() or fragment
         except Exception:
             result = fragment
 
@@ -659,40 +836,32 @@ class ApplicationsDB:
     def translate_to_russian(self, text: str) -> str:
         if not text or not TRANSLATE_TO_RU:
             return text
+        normalized = text.strip()
+        if not normalized:
+            return text
+        if self._looks_russian(normalized):
+            return text
 
-        parts = re.split(r"(\r?\n)", text)
-        out: list[str] = []
-        for part in parts:
-            if part in {"\n", "\r\n"}:
-                out.append(part)
+        # Translate larger chunks to reduce rate-limit hits from too many requests.
+        max_chunk = 450
+        words = normalized.split()
+        chunks: list[str] = []
+        current = ""
+        for word in words:
+            if not current:
+                current = word
                 continue
-            if not part.strip():
-                out.append(part)
-                continue
+            if len(current) + 1 + len(word) <= max_chunk:
+                current += " " + word
+            else:
+                chunks.append(current)
+                current = word
+        if current:
+            chunks.append(current)
 
-            match = re.match(r"^(\s*)(.*?)(\s*)$", part)
-            if not match:
-                out.append(part)
-                continue
-
-            lead_ws = match.group(1)
-            core = match.group(2)
-            tail_ws = match.group(3)
-            if not core:
-                out.append(part)
-                continue
-
-            prefix = ""
-            core_text = core
-            marker = re.match(r"^((?:[-*•–—]\s+)|(?:\d+[.)]\s+))(.*)$", core)
-            if marker:
-                prefix = marker.group(1)
-                core_text = marker.group(2)
-
-            translated_core = self._translate_fragment_to_russian(core_text)
-            out.append(f"{lead_ws}{prefix}{translated_core}{tail_ws}")
-
-        return "".join(out)
+        translated = [self._translate_fragment_to_russian(chunk) for chunk in chunks]
+        result = "\n\n".join(part for part in translated if part).strip()
+        return result or text
 
     def parse_from_job_link(
         self, link_url: str, fallback_company: str, fallback_role: str, fallback_location: str
@@ -743,7 +912,7 @@ class ApplicationsDB:
         if about_match:
             parsed_about = strip_html_to_text(about_match.group(1))
             if parsed_about:
-                about = self.translate_to_russian(parsed_about)
+                about = parsed_about
 
         result = (company, role, location, about)
         self.job_cache[link_url] = result
@@ -782,21 +951,25 @@ class ApplicationsDB:
             else:
                 record_key = f"{str(path)}::0::no-link"
             cur.execute(
-                "SELECT manual_status, about_job_text FROM applications WHERE record_key = ?",
+                "SELECT manual_status, about_job_text_en, about_job_text_ru, about_job_text FROM applications WHERE record_key = ?",
                 (record_key,),
             )
             row = cur.fetchone()
             if row is not None:
-                existing_about_text = str(row[1] or "")
-                if existing_about_text and self._looks_russian(existing_about_text):
-                    company, role, location = company_text, role_text, location_text
-                    about_job_text = existing_about_text
-                else:
-                    company, role, location, about_job_text = self.parse_from_job_link(
-                        key_link_url, company_text, role_text, location_text
-                    )
-                    if not about_job_text and existing_about_text:
-                        about_job_text = existing_about_text
+                existing_about_en = str(row[1] or "")
+                existing_about_ru = str(row[2] or "")
+                legacy_about = str(row[3] or "")
+                if not existing_about_en and not existing_about_ru and legacy_about:
+                    if self._looks_russian(legacy_about):
+                        existing_about_ru = legacy_about
+                    else:
+                        existing_about_en = legacy_about
+                # Existing record: keep the current description/translation as-is.
+                # Translation to RU is done only for newly inserted records.
+                company, role, location = company_text, role_text, location_text
+                about_en = existing_about_en
+                about_ru = existing_about_ru
+                about_legacy = about_ru or about_en or legacy_about
 
                 # Existing record: refresh data from new source file while preserving manual/pinned status.
                 existing_manual_status = str(row[0]) if row[0] else None
@@ -807,7 +980,7 @@ class ApplicationsDB:
                     """
                     UPDATE applications
                     SET source_file = ?, file_name = ?, email_date = ?, subject = ?,
-                        company = ?, role = ?, location = ?, link_url = ?, about_job_text = ?,
+                        company = ?, role = ?, location = ?, link_url = ?, about_job_text = ?, about_job_text_en = ?, about_job_text_ru = ?,
                         auto_status = ?, manual_status = ?, current_status = ?, body = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE record_key = ?
@@ -821,7 +994,9 @@ class ApplicationsDB:
                         role,
                         location,
                         stored_link_url,
-                        about_job_text,
+                        about_legacy,
+                        about_en,
+                        about_ru,
                         status,
                         manual_status,
                         current_status,
@@ -832,9 +1007,12 @@ class ApplicationsDB:
                 touched_keys.add(record_key)
                 continue
 
-            company, role, location, about_job_text = self.parse_from_job_link(
+            company, role, location, about_original = self.parse_from_job_link(
                 key_link_url, company_text, role_text, location_text
             )
+            about_en = about_original
+            about_ru = self.translate_to_russian(about_en) if about_en else ""
+            about_legacy = about_ru or about_en
             pinned_status = self.get_pinned_status(record_key)
             manual_status = pinned_status
             current_status = manual_status or status
@@ -843,8 +1021,9 @@ class ApplicationsDB:
                 """
                 INSERT INTO applications(
                     record_key, source_file, file_name, email_date, subject, company, role, location, link_url, about_job_text,
+                    about_job_text_en, about_job_text_ru,
                     auto_status, manual_status, current_status, body, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(record_key) DO UPDATE SET
                     source_file = excluded.source_file,
                     file_name = excluded.file_name,
@@ -855,6 +1034,8 @@ class ApplicationsDB:
                     location = excluded.location,
                     link_url = excluded.link_url,
                     about_job_text = excluded.about_job_text,
+                    about_job_text_en = excluded.about_job_text_en,
+                    about_job_text_ru = excluded.about_job_text_ru,
                     auto_status = excluded.auto_status,
                     current_status = COALESCE(applications.manual_status, excluded.auto_status),
                     body = excluded.body,
@@ -870,7 +1051,9 @@ class ApplicationsDB:
                     role,
                     location,
                     stored_link_url,
-                    about_job_text,
+                    about_legacy,
+                    about_en,
+                    about_ru,
                     status,
                     manual_status,
                     current_status,
@@ -882,26 +1065,37 @@ class ApplicationsDB:
 
     def translate_existing_about_job_texts(self) -> tuple[int, int]:
         cur = self.conn.cursor()
-        cur.execute("SELECT id, about_job_text FROM applications WHERE about_job_text IS NOT NULL AND about_job_text != ''")
+        cur.execute(
+            """
+            SELECT id, COALESCE(about_job_text_en, ''), COALESCE(about_job_text_ru, ''), COALESCE(about_job_text, '')
+            FROM applications
+            """
+        )
         rows = cur.fetchall()
         checked = 0
         updated = 0
-        for app_id, about_text_raw in rows:
-            about_text = str(about_text_raw or "")
-            if not about_text:
+        for app_id, about_en_raw, about_ru_raw, legacy_raw in rows:
+            about_en = str(about_en_raw or "")
+            about_ru = str(about_ru_raw or "")
+            legacy = str(legacy_raw or "")
+            if not about_en and legacy and not self._looks_russian(legacy):
+                about_en = legacy
+            if not about_ru and legacy and self._looks_russian(legacy):
+                about_ru = legacy
+            if not about_en:
                 continue
             checked += 1
-            if self._looks_russian(about_text):
+            if about_ru and self._looks_russian(about_ru):
                 continue
-            translated = self.translate_to_russian(about_text)
-            if translated and translated != about_text:
+            translated = self.translate_to_russian(about_en)
+            if translated and translated != about_en:
                 cur.execute(
                     """
                     UPDATE applications
-                    SET about_job_text = ?, updated_at = CURRENT_TIMESTAMP
+                    SET about_job_text_ru = ?, about_job_text = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
-                    (translated, int(app_id)),
+                    (translated, translated, int(app_id)),
                 )
                 updated += 1
         self.conn.commit()
@@ -959,7 +1153,10 @@ class ApplicationsDB:
         cur.execute(
             """
             SELECT id, source_file, file_name, email_date, subject, company, role, link_url,
-                   location, auto_status, manual_status, current_status, body, about_job_text
+                   location, auto_status, manual_status, current_status, body,
+                   COALESCE(NULLIF(about_job_text_ru, ''), NULLIF(about_job_text, ''), NULLIF(about_job_text_en, '')) AS about_job_text,
+                   COALESCE(NULLIF(about_job_text_en, ''), NULLIF(about_job_text, '')) AS about_job_text_en,
+                   COALESCE(NULLIF(about_job_text_ru, ''), NULLIF(about_job_text, '')) AS about_job_text_ru
             FROM applications
             WHERE current_status = ?
             ORDER BY company COLLATE NOCASE, email_date DESC, file_name COLLATE NOCASE
@@ -984,6 +1181,8 @@ class ApplicationsDB:
                     current_status=str(r[11]),
                     body=str(r[12]),
                     about_job_text=str(r[13] or ""),
+                    about_job_text_en=str(r[14] or ""),
+                    about_job_text_ru=str(r[15] or ""),
                 )
             )
         return rows
@@ -993,7 +1192,10 @@ class ApplicationsDB:
         cur.execute(
             """
             SELECT id, source_file, file_name, email_date, subject, company, role, link_url,
-                   location, auto_status, manual_status, current_status, body, about_job_text
+                   location, auto_status, manual_status, current_status, body,
+                   COALESCE(NULLIF(about_job_text_ru, ''), NULLIF(about_job_text, ''), NULLIF(about_job_text_en, '')) AS about_job_text,
+                   COALESCE(NULLIF(about_job_text_en, ''), NULLIF(about_job_text, '')) AS about_job_text_en,
+                   COALESCE(NULLIF(about_job_text_ru, ''), NULLIF(about_job_text, '')) AS about_job_text_ru
             FROM applications
             WHERE id = ?
             """,
@@ -1017,11 +1219,22 @@ class ApplicationsDB:
             current_status=str(r[11]),
             body=str(r[12]),
             about_job_text=str(r[13] or ""),
+            about_job_text_en=str(r[14] or ""),
+            about_job_text_ru=str(r[15] or ""),
         )
 
     def ensure_about_job_text(self, app_id: int) -> str:
         cur = self.conn.cursor()
-        cur.execute("SELECT link_url, company, role, location, about_job_text FROM applications WHERE id = ?", (app_id,))
+        cur.execute(
+            """
+            SELECT link_url, company, role, location,
+                   COALESCE(about_job_text_en, ''),
+                   COALESCE(about_job_text_ru, ''),
+                   COALESCE(about_job_text, '')
+            FROM applications WHERE id = ?
+            """,
+            (app_id,),
+        )
         row = cur.fetchone()
         if not row:
             raise ValueError("Application not found")
@@ -1030,32 +1243,41 @@ class ApplicationsDB:
         company = str(row[1] or "Unknown")
         role = str(row[2] or "")
         location = str(row[3] or "")
-        existing = str(row[4] or "")
-        if existing:
-            translated = self.translate_to_russian(existing)
-            if translated != existing:
+        existing_en = str(row[4] or "")
+        existing_ru = str(row[5] or "")
+        legacy = str(row[6] or "")
+        if not existing_en and legacy and not self._looks_russian(legacy):
+            existing_en = legacy
+        if not existing_ru and legacy and self._looks_russian(legacy):
+            existing_ru = legacy
+
+        if existing_en:
+            translated = existing_ru or self.translate_to_russian(existing_en)
+            if translated and translated != existing_ru:
                 cur.execute(
                     """
                     UPDATE applications
-                    SET about_job_text = ?, updated_at = CURRENT_TIMESTAMP
+                    SET about_job_text_en = ?, about_job_text_ru = ?, about_job_text = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
-                    (translated, app_id),
+                    (existing_en, translated, translated or existing_en, app_id),
                 )
                 self.conn.commit()
-            return translated
+            return translated or existing_en
 
-        parsed_company, parsed_role, parsed_location, about_text = self.parse_from_job_link(link_url, company, role, location)
+        parsed_company, parsed_role, parsed_location, about_en = self.parse_from_job_link(link_url, company, role, location)
+        about_ru = self.translate_to_russian(about_en) if about_en else ""
+        display_about = about_ru or about_en
         cur.execute(
             """
             UPDATE applications
-            SET company = ?, role = ?, location = ?, about_job_text = ?, updated_at = CURRENT_TIMESTAMP
+            SET company = ?, role = ?, location = ?, about_job_text_en = ?, about_job_text_ru = ?, about_job_text = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
-            (parsed_company, parsed_role, parsed_location, about_text, app_id),
+            (parsed_company, parsed_role, parsed_location, about_en, about_ru, display_about, app_id),
         )
         self.conn.commit()
-        return about_text
+        return display_about
 
     def set_manual_status(self, app_id: int, status: Optional[str]) -> None:
         cur = self.conn.cursor()
@@ -1468,7 +1690,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="GUI app for LinkedIn applications with SQL status management.")
     parser.add_argument(
         "--source-dir",
-        default=str(Path.home() / "Library" / "Application Support" / "DriveCVSync" / "LinkedIn email"),
+        default=str(Path.home() / "Library" / "Application Support" / "DriveCVSync" / "LinkedIn Archive"),
         help="Directory with LinkedIn *.txt emails.",
     )
     parser.add_argument(

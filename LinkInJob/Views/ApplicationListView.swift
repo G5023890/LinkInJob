@@ -12,54 +12,35 @@ struct ApplicationListView: View {
 
             Divider()
 
-            List(selection: $viewModel.selectedItemID) {
-                ForEach(viewModel.filteredApplications) { item in
-                    ApplicationRowView(item: item) {
-                        viewModel.toggleStar(for: item)
-                    }
-                    .tag(item.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        viewModel.selectedItemID = item.id
-                    }
-                    .simultaneousGesture(TapGesture(count: 2).onEnded {
-                        if item.jobURL != nil {
-                            viewModel.openJobLink(for: item)
-                        } else {
-                            viewModel.openSourceFile(for: item)
-                        }
-                    })
-                    .contextMenu {
-                        Menu("Set Stage") {
-                            ForEach(Stage.allCases, id: \.self) { stage in
-                                Button(stage.title) {
-                                    viewModel.setStage(stage, for: item)
-                                }
-                            }
-                        }
-
-                        if item.jobURL != nil {
-                            Button("Open Job Link") {
-                                viewModel.openJobLink(for: item)
-                            }
-                        }
-
-                        Button("Open Source File") {
-                            viewModel.openSourceFile(for: item)
-                        }
-
-                        Button(item.starred ? "Unstar" : "Toggle Star") {
-                            viewModel.toggleStar(for: item)
-                        }
-
-                        Button("Reset to Auto") {
-                            viewModel.resetToAuto(for: item)
-                        }
+            ApplicationsTableView(
+                selectedItemID: $viewModel.selectedItemID,
+                items: viewModel.filteredApplications,
+                onSelect: { selected in
+                    viewModel.selectedItemID = selected?.id
+                },
+                onToggleStar: { item in
+                    viewModel.toggleStar(for: item)
+                },
+                onSetStage: { item, stage in
+                    viewModel.setStage(stage, for: item)
+                },
+                onOpenJobLink: { item in
+                    viewModel.openJobLink(for: item)
+                },
+                onOpenSourceFile: { item in
+                    viewModel.openSourceFile(for: item)
+                },
+                onResetToAuto: { item in
+                    viewModel.resetToAuto(for: item)
+                },
+                onOpenByDoubleClick: { item in
+                    if item.jobURL != nil {
+                        viewModel.openJobLink(for: item)
+                    } else {
+                        viewModel.openSourceFile(for: item)
                     }
                 }
-            }
-            .listStyle(.inset)
-            .focused($listFocused)
+            )
             .background(
                 KeyCaptureView(isEnabled: listFocused && !searchFocused) { event in
                     guard let item = viewModel.selectedItem else { return }

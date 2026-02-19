@@ -26,7 +26,8 @@ let package = Package(
                 "Services"
             ],
             linkerSettings: [
-                .linkedLibrary("sqlite3")
+                .linkedLibrary("sqlite3"),
+                .linkedFramework("Security")
             ]
         )
     ]

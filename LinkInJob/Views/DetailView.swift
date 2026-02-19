@@ -7,6 +7,7 @@ struct DetailView: View {
 
     @State private var descriptionQuery = ""
     @State private var showFindField = false
+    @State private var showOriginalDescription = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,6 +50,21 @@ struct DetailView: View {
                                         Button("Find") {
                                             showFindField.toggle()
                                         }
+                                        Button {
+                                            showOriginalDescription = false
+                                            viewModel.translateDescriptionToRussian(for: item)
+                                        } label: {
+                                            if viewModel.isDescriptionTranslating(for: item) {
+                                                Label("Перевод...", systemImage: "hourglass")
+                                            } else {
+                                                Text("Перевести на русский")
+                                            }
+                                        }
+                                        .disabled(!viewModel.canTranslateDescriptionToRussian(for: item) || viewModel.isDescriptionTranslating(for: item))
+                                        Button(showOriginalDescription ? "Show RU" : "Original") {
+                                            showOriginalDescription.toggle()
+                                        }
+                                        .disabled((item.originalDescriptionText ?? "").isEmpty)
                                         Button("Original Link") {
                                             viewModel.openJobLink(for: item)
                                         }
@@ -84,6 +100,11 @@ struct DetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onChange(of: item?.id) { _, _ in
+            showOriginalDescription = false
+            descriptionQuery = ""
+            showFindField = false
         }
     }
 
@@ -146,6 +167,10 @@ struct DetailView: View {
                     Divider()
                     Text(viewModel.dataSourceLabel)
                         .foregroundStyle(.secondary)
+                    if !viewModel.syncStatusText.isEmpty {
+                        Text(viewModel.syncStatusText)
+                            .foregroundStyle(.secondary)
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -153,6 +178,12 @@ struct DetailView: View {
                 .controlSize(.large)
                 .buttonStyle(.borderless)
                 .help("More")
+            }
+            if !viewModel.syncStatusText.isEmpty {
+                Text(viewModel.syncStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
         .padding(.horizontal, 12)
@@ -223,14 +254,14 @@ struct DetailView: View {
     }
 
     private func copyDescription(_ item: ApplicationItem) {
-        guard let text = item.descriptionText, !text.isEmpty else { return }
+        guard let text = activeDescriptionText(for: item), !text.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
     }
 
     private func filteredDescription(for item: ApplicationItem) -> String? {
-        guard let text = item.descriptionText, !text.isEmpty else { return nil }
+        guard let text = activeDescriptionText(for: item), !text.isEmpty else { return nil }
         guard !descriptionQuery.isEmpty else { return text }
 
         let lines = text.components(separatedBy: .newlines)
@@ -241,5 +272,12 @@ struct DetailView: View {
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    private func activeDescriptionText(for item: ApplicationItem) -> String? {
+        if showOriginalDescription {
+            return item.originalDescriptionText ?? item.descriptionText
+        }
+        return item.descriptionText ?? item.originalDescriptionText
     }
 }

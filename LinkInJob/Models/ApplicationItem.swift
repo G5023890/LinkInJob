@@ -14,6 +14,7 @@ struct ApplicationItem: Identifiable, Codable {
     var sourceFilePath: String
     var jobURL: String?
     var descriptionText: String?
+    var originalDescriptionText: String?
     var starred: Bool
 
     var effectiveStage: Stage {

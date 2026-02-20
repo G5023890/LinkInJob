@@ -14,7 +14,7 @@ struct ProjectCardView: View {
                 Text(viewModel.directoryName)
                     .font(.title3.weight(.semibold))
 
-                Text(viewModel.directoryPath)
+                Text(viewModel.directoryDisplayPath)
                     .font(.system(size: 12, weight: .regular, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

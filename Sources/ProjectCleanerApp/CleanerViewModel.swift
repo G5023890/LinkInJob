@@ -46,7 +46,7 @@ final class CleanerViewModel: ObservableObject {
         }
     }
 
-    init(initialDirectory: URL = URL(fileURLWithPath: "\(NSHomeDirectory())/Documents/Develop", isDirectory: true)) {
+    init(initialDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Develop", isDirectory: true)) {
         targetDirectoryURL = initialDirectory
     }
 
@@ -57,6 +57,10 @@ final class CleanerViewModel: ObservableObject {
 
     var directoryPath: String {
         targetDirectoryURL.path
+    }
+
+    var directoryDisplayPath: String {
+        (directoryPath as NSString).abbreviatingWithTildeInPath
     }
 
     var isBusy: Bool {

@@ -6,6 +6,42 @@ This repository provides tools to parse LinkedIn/job emails, sync TXT archives, 
 
 Current release: `1.0`
 
+## System Context
+
+```mermaid
+flowchart LR
+    U["User (Grigorii)"]
+
+    subgraph L["LinkInJob Ecosystem"]
+      APP["LinkInJob macOS App (SwiftUI)"]
+      DB["SQLite DB (applications.db)"]
+      PARSER["Parser/Sync Engine (Python scripts)"]
+      TXT["Local TXT Archive (LinkedIn emails)"]
+      ARGOS["Argos Translate (Local Runtime)"]
+    end
+
+    GMAIL["Gmail + Google Apps Script"]
+    GDRIVE["Google Drive (LinkedIn Archive)"]
+    GAPI["Google Cloud Translate API"]
+    GFREE["Google Web Translate (gtx)"]
+    WEB["Job Sites / LinkedIn URLs"]
+
+    U -->|"Uses UI, stages, search, actions"| APP
+    APP -->|"Read/Write applications, statuses, stars"| DB
+    APP -->|"Run sync pipeline"| PARSER
+    PARSER -->|"Read new .txt emails"| TXT
+    PARSER -->|"Upsert parsed cards"| DB
+
+    GMAIL -->|"Exports emails as .txt"| GDRIVE
+    GDRIVE -->|"Sync to local folder"| TXT
+
+    APP -->|"Translate description (optional)"| GAPI
+    APP -->|"Translate description (optional)"| GFREE
+    APP -->|"Translate description (offline option)"| ARGOS
+
+    APP -->|"Open job/source links"| WEB
+```
+
 ## What This Repository Contains
 
 - `scripts/update_linkedin_applications.py`  

@@ -191,3 +191,8 @@ function processLinkedInArchive() {
 
 Repository:  
 [https://github.com/G5023890/LinkedIn](https://github.com/G5023890/LinkedIn)
+
+## License
+
+This project is licensed under Apache-2.0.  
+See `/Users/grigorymordokhovich/Documents/Develop/LinkedIn/LICENSE`.

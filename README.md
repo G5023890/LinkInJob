@@ -2,6 +2,10 @@
 
 This repository provides tools to parse LinkedIn/job emails, sync TXT archives, and manage applications in SQL + GUI.
 
+## Release
+
+Current release: `1.0`
+
 ## What This Repository Contains
 
 - `scripts/update_linkedin_applications.py`  

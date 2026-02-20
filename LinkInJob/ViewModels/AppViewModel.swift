@@ -365,6 +365,16 @@ finally:
         applications.filter(\.needsFollowUp).count
     }
 
+    func companyOccurrences(for company: String) -> Int {
+        let normalized = company.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return 0 }
+        return applications.reduce(into: 0) { result, item in
+            if item.company.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized {
+                result += 1
+            }
+        }
+    }
+
     func select(stage: Stage) {
         selectedStage = stage
         sidebarFilter = .stage(stage)
@@ -586,6 +596,24 @@ finally:
         default:
             break
         }
+    }
+
+    func moveSelectionInFilteredList(by offset: Int) {
+        guard !filteredApplications.isEmpty else {
+            selectedItemID = nil
+            return
+        }
+
+        guard
+            let selectedItemID,
+            let currentIndex = filteredApplications.firstIndex(where: { $0.id == selectedItemID })
+        else {
+            self.selectedItemID = filteredApplications.first?.id
+            return
+        }
+
+        let nextIndex = max(0, min(filteredApplications.count - 1, currentIndex + offset))
+        self.selectedItemID = filteredApplications[nextIndex].id
     }
 
     func timeline(for item: ApplicationItem) -> [ActivityEvent] {

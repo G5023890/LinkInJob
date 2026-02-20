@@ -12,7 +12,7 @@ struct ApplicationListView: View {
 
             Divider()
 
-            List {
+            List(selection: $viewModel.selectedItemID) {
                 ForEach(viewModel.filteredApplications) { item in
                     ApplicationRowView(
                         item: item,
@@ -46,9 +46,6 @@ struct ApplicationListView: View {
                             viewModel.resetToAuto(for: item)
                         }
                     }
-                    .onTapGesture {
-                        viewModel.selectedItemID = item.id
-                    }
                     .onTapGesture(count: 2) {
                         viewModel.selectedItemID = item.id
                         if item.jobURL != nil {
@@ -60,25 +57,32 @@ struct ApplicationListView: View {
                     .padding(.vertical, 2)
                     .listRowInsets(EdgeInsets(top: 2, leading: 10, bottom: 2, trailing: 10))
                     .listRowSeparator(.hidden)
+                    .tag(item.id)
                 }
             }
             .listStyle(.plain)
+            .focused($listFocused)
             .scrollContentBackground(.hidden)
             .background(Color(nsColor: .windowBackgroundColor))
             .background(
                 KeyCaptureView(isEnabled: listFocused && !searchFocused) { event in
-                    guard let item = viewModel.selectedItem else { return }
                     switch event {
                     case .letter(let char):
                         viewModel.handleListHotkey(String(char))
                     case .returnKey:
+                        guard let item = viewModel.selectedItem else { return }
                         if item.jobURL != nil {
                             viewModel.openJobLink(for: item)
                         } else {
                             viewModel.openSourceFile(for: item)
                         }
                     case .space:
+                        guard let item = viewModel.selectedItem else { return }
                         viewModel.openSourceFile(for: item)
+                    case .arrowUp:
+                        viewModel.moveSelectionInFilteredList(by: -1)
+                    case .arrowDown:
+                        viewModel.moveSelectionInFilteredList(by: 1)
                     }
                 }
             )
@@ -122,6 +126,8 @@ private enum KeyAction {
     case letter(Character)
     case returnKey
     case space
+    case arrowUp
+    case arrowDown
 }
 
 private struct KeyCaptureView: NSViewRepresentable {
@@ -170,6 +176,12 @@ private struct KeyCaptureView: NSViewRepresentable {
                     return nil
                 case 49:
                     self.onKeyAction(.space)
+                    return nil
+                case 126:
+                    self.onKeyAction(.arrowUp)
+                    return nil
+                case 125:
+                    self.onKeyAction(.arrowDown)
                     return nil
                 default:
                     if let char = event.charactersIgnoringModifiers?.lowercased().first,

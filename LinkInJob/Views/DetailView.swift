@@ -112,9 +112,11 @@ struct DetailView: View {
 
     @ViewBuilder
     private func detailHeader(_ item: ApplicationItem) -> some View {
+        let companyCount = max(1, viewModel.companyOccurrences(for: item.company))
+
         HStack(alignment: .top, spacing: 18) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(item.company)
+                Text("\(item.company) (\(companyCount))")
                     .font(.title.bold())
                     .lineLimit(2)
 
@@ -193,8 +195,8 @@ struct DetailView: View {
             }
             .buttonStyle(.bordered)
 
-            Button("Delete", role: .destructive) {
-                viewModel.delete(item: item)
+            Button("Open Job Link") {
+                viewModel.openJobLink(for: item)
             }
             .buttonStyle(.bordered)
         }

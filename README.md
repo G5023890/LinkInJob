@@ -1,53 +1,58 @@
 # LinkedIn Applications Tracker
 
-This project contains:
+Проект для обработки писем LinkedIn о вакансиях и работы с заявками в SQL/GUI.
 
-- A script to parse exported LinkedIn/job emails and update your Obsidian note automatically (`scripts/update_linkedin_applications.py`)
-- A SQL-backed desktop shell to visualize folder hierarchy (`scripts/folder_shell_sql.py`)
-- A graphical SQL app for LinkedIn applications with auto status + manual control (`scripts/linkedin_applications_gui_sql.py`)
-
-## Project Structure
+## Что в репозитории
 
 - `scripts/update_linkedin_applications.py`  
-  Parses `.txt` emails and updates categorized company lists in markdown.
-- `scripts/setup_rclone_drive.sh`  
-  Helper to configure rclone Google Drive remote.
-- `scripts/sync_drive_rclone.sh`  
-  Helper to sync email files from Google Drive folder.
+  Парсит `.txt` письма и обновляет markdown-файлы для Obsidian.
 - `scripts/folder_shell_sql.py`  
-  Runs an interactive SQL-backed program in terminal: scans a data source directory, stores hierarchy in SQLite, and lets you browse it as a tree shell.
+  SQL-backed shell для просмотра иерархии файлов в терминале.
 - `scripts/linkedin_applications_gui_sql.py`  
-  Desktop GUI for applications. Auto classifies by status (`applied/interview/rejected/review`) and lets you manually move cards between statuses, with SQL persistence.
+  Python GUI (PySide6) с SQLite, автоклассификацией и ручным управлением статусами.
+- `LinkInJob/`  
+  Нативное macOS-приложение (SwiftUI), работающее с тем же пайплайном и SQLite.
 
-## Requirements
+## Структура проекта
+
+- `scripts/setup_rclone_drive.sh` — настройка `rclone` remote для Google Drive.
+- `scripts/sync_drive_rclone.sh` — синхронизация TXT-архива из Google Drive.
+- `scripts/setup_argos_runtime.sh` — установка локального Argos Translate runtime.
+- `scripts/update_linkedin_applications.py` — обновление markdown-сводок.
+- `scripts/folder_shell_sql.py` — SQL shell в терминале.
+- `scripts/linkedin_applications_gui_sql.py` — Python GUI заявок.
+- `LinkInJob/scripts/build_and_install_app.sh` — сборка и установка macOS app в `/Applications/LinkInJob.app`.
+
+## Требования
 
 - Python 3
-- (Optional) `rclone` for Drive sync scripts
-- `PySide6` for graphical interface:
+- `PySide6` (для Python GUI):
 
 ```bash
 python3 -m pip install PySide6
 ```
 
-## Usage
+- Опционально: `rclone` (для sync с Google Drive)
+- Для `LinkInJob` (SwiftUI): Xcode/Swift toolchain
 
-### 1) Update Obsidian markdown from email files
+## Основные пути (по умолчанию)
 
-Default command:
+- TXT-архив писем:  
+  `$HOME/Library/Application Support/DriveCVSync/LinkedIn Archive`
+- SQLite БД заявок:  
+  `$HOME/.local/share/linkedin_apps/applications.db`
+- Лог последней синхронизации (LinkInJob):  
+  `$HOME/Library/Application Support/LinkInJob/Logs/last_sync.log`
+
+## Использование
+
+### 1) Обновить Obsidian markdown из TXT писем
 
 ```bash
 python3 scripts/update_linkedin_applications.py
 ```
 
-By default, it reads emails from:
-
-`$HOME/Library/Application Support/DriveCVSync/LinkedIn Archive`
-
-and writes to:
-
-`$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/M.Greg/Работа/Поданные и откланенные заявки/System_Administrator.md`
-
-You can override paths:
+Переопределить пути:
 
 ```bash
 python3 scripts/update_linkedin_applications.py \
@@ -55,15 +60,13 @@ python3 scripts/update_linkedin_applications.py \
   --target-file "/path/to/output.md"
 ```
 
-### 2) SQL shell for folder hierarchy (program)
-
-Start interactive program (default source is current directory):
+### 2) SQL shell (терминал)
 
 ```bash
 python3 scripts/folder_shell_sql.py
 ```
 
-Custom source and DB path:
+С кастомным source/DB:
 
 ```bash
 python3 scripts/folder_shell_sql.py \
@@ -72,48 +75,56 @@ python3 scripts/folder_shell_sql.py \
   --sync-first
 ```
 
-Inside the program:
-
-- Set only the data source path.
-- Use `sync` command to refresh data in SQLite.
-- Browse tree by indexes (`1`, `2`, ...), go back with `..`, and print subtree with `tree 3`.
-- Rendering reads data from SQL (not directly from filesystem).
-
-### 3) Graphical SQL interface for applications
-
-Run GUI:
+### 3) Python GUI заявок (PySide6)
 
 ```bash
 python3 scripts/linkedin_applications_gui_sql.py \
   --source-dir "$HOME/Library/Application Support/DriveCVSync/LinkedIn Archive"
 ```
 
-What it does:
+Что делает:
 
-- Reads `.txt` LinkedIn emails from `--source-dir`.
-- Auto classifies each record into `Входящие`, `Applied`, `Reject`, `Interview`, or `Manual Sort`.
-- Stores everything in SQLite (manual moves are persisted).
-- Lets you manually reassign status from GUI buttons.
-- Fetches and shows `About the job` from LinkedIn by job URL found in email.
-- Keeps URL hidden in UI and opens it only via `Open Job Link` button.
-- If one email has multiple job links, it is split into multiple records (one link = one record).
-- Existing links are deduplicated in SQL (already known links are ignored on sync).
-- Company, role, and About the job are parsed from the job link when available.
+- Читает `.txt` письма из `--source-dir`.
+- Автоклассифицирует записи в: `Входящие`, `Applied`, `Reject`, `Interview`, `Manual Sort`, `Archive`.
+- Хранит данные в SQLite (включая ручные изменения статусов).
+- Поддерживает несколько ссылок вакансий в одном письме (1 ссылка = 1 запись).
+- Подтягивает `About the job` по LinkedIn URL, когда доступно.
 
-### 4) Gmail Apps Script -> TXT archive (source for parser)
+### 4) Нативное macOS приложение (SwiftUI)
 
-We use a Google Apps Script in Gmail/Drive that exports LinkedIn emails into plain `.txt` files.
-These files are then consumed by parser/sync pipeline in this project.
+Сборка и установка:
 
-Default archive folder created by script:
+```bash
+cd LinkInJob
+./scripts/build_and_install_app.sh
+```
+
+После сборки приложение будет установлено в:
+
+`/Applications/LinkInJob.app`
+
+### 5) Sync из Google Drive
+
+Если настроен `rclone`, можно запускать:
+
+```bash
+./scripts/sync_drive_rclone.sh
+```
+
+## Gmail Apps Script -> TXT архив
+
+Используется Google Apps Script в Gmail/Drive, который сохраняет письма LinkedIn в `.txt`.
+Именно эти TXT-файлы дальше обрабатываются парсером в этом проекте.
+
+Папка архива в Drive:
 
 `LinkedIn Archive`
 
-Tracking spreadsheet created by script:
+Таблица трекинга:
 
 `LinkedIn_Job_Tracker`
 
-Script currently used:
+Текущий скрипт:
 
 ```javascript
 function processLinkedInArchive() {
@@ -157,20 +168,20 @@ function processLinkedInArchive() {
     let subject = lastMsg.getSubject();
     let date = lastMsg.getDate();
     let formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd_HH-mm");
-    
-    let fileName = `${formattedDate} - ${subject.replace(/[/\\?%*:|"<>]/g, '')}.txt`;
+
+    let fileName = `${formattedDate} - ${subject.replace(/[/\\?%*:|"<>]/g, "")}.txt`;
 
     // Если файла еще нет — создаем его
     if (!folder.getFilesByName(fileName).hasNext()) {
       let content = `От: ${lastMsg.getFrom()}\nДата: ${date}\nТема: ${subject}\n\n${lastMsg.getPlainBody()}`;
       let newFile = folder.createFile(fileName, content);
-      
+
       // Определяем статус
       let status = "Подано";
       let body = lastMsg.getPlainBody().toLowerCase();
       if (body.includes("viewed your application")) status = "Просмотрено";
       if (body.includes("unfortunately") || body.includes("not moving forward")) status = "Отказ";
-      
+
       // Добавляем в таблицу
       sheet.appendRow([date, subject, status, newFile.getUrl()]);
       console.log("Добавлено: " + fileName);
@@ -179,16 +190,7 @@ function processLinkedInArchive() {
 }
 ```
 
-## Output Sections
-
-The script updates markdown with this hierarchy:
-
-- `#Компании с поданным резюме`
-- `#Компании ответившие отказом`
-- `#Компании пригласившие на интервью`
-
 ## GitHub
 
-Repository:
-
+Repository:  
 [https://github.com/G5023890/LinkedIn](https://github.com/G5023890/LinkedIn)

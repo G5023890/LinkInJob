@@ -89,6 +89,22 @@ This script:
 open -a "Project Cleaner"
 ```
 
+## Screenshots
+
+Place screenshots in a local `docs/screenshots/` folder and reference them here.
+
+Example:
+
+```markdown
+![Main window](docs/screenshots/main-window.png)
+```
+
+Current UI preview:
+
+```markdown
+![Project Cleaner UI](docs/screenshots/project-cleaner-ui.png)
+```
+
 ## Command Line Dry Run (Script only)
 
 ```bash
@@ -106,6 +122,28 @@ Apply cleanup after review:
 - macOS 14+
 - Swift 5.9+
 - Xcode Command Line Tools
+
+## Roadmap
+
+- [ ] Add cleanup presets (`Node only`, `Swift only`, `All`)
+- [ ] Add exclusion rules per folder/project
+- [ ] Add optional scheduled scans
+- [ ] Add export of scan report (`.txt` / `.json`)
+- [ ] Add in-app release notes
+
+## Contributing
+
+Contributions are welcome.
+
+1. Fork the repository.
+2. Create a feature branch.
+3. Make focused, testable changes.
+4. Run build checks locally:
+   - `swift build -c release`
+5. Open a pull request with:
+   - summary of changes
+   - screenshots for UI updates
+   - safety impact notes for cleanup logic
 
 ## License
 

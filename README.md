@@ -1,58 +1,58 @@
 # LinkedIn Applications Tracker
 
-Проект для обработки писем LinkedIn о вакансиях и работы с заявками в SQL/GUI.
+This repository provides tools to parse LinkedIn/job emails, sync TXT archives, and manage applications in SQL + GUI.
 
-## Что в репозитории
+## What This Repository Contains
 
 - `scripts/update_linkedin_applications.py`  
-  Парсит `.txt` письма и обновляет markdown-файлы для Obsidian.
+  Parses `.txt` emails and updates Obsidian markdown summaries.
 - `scripts/folder_shell_sql.py`  
-  SQL-backed shell для просмотра иерархии файлов в терминале.
+  SQL-backed terminal shell for browsing folder hierarchy.
 - `scripts/linkedin_applications_gui_sql.py`  
-  Python GUI (PySide6) с SQLite, автоклассификацией и ручным управлением статусами.
+  Python GUI (PySide6) with SQLite, auto-classification, and manual status control.
 - `LinkInJob/`  
-  Нативное macOS-приложение (SwiftUI), работающее с тем же пайплайном и SQLite.
+  Native macOS SwiftUI app that works with the same pipeline and SQLite DB.
 
-## Структура проекта
+## Project Structure
 
-- `scripts/setup_rclone_drive.sh` — настройка `rclone` remote для Google Drive.
-- `scripts/sync_drive_rclone.sh` — синхронизация TXT-архива из Google Drive.
-- `scripts/setup_argos_runtime.sh` — установка локального Argos Translate runtime.
-- `scripts/update_linkedin_applications.py` — обновление markdown-сводок.
-- `scripts/folder_shell_sql.py` — SQL shell в терминале.
-- `scripts/linkedin_applications_gui_sql.py` — Python GUI заявок.
-- `LinkInJob/scripts/build_and_install_app.sh` — сборка и установка macOS app в `/Applications/LinkInJob.app`.
+- `scripts/setup_rclone_drive.sh` — configure `rclone` remote for Google Drive.
+- `scripts/sync_drive_rclone.sh` — sync TXT archive from Google Drive.
+- `scripts/setup_argos_runtime.sh` — install local Argos Translate runtime.
+- `scripts/update_linkedin_applications.py` — update markdown summaries.
+- `scripts/folder_shell_sql.py` — terminal SQL shell.
+- `scripts/linkedin_applications_gui_sql.py` — Python GUI for applications.
+- `LinkInJob/scripts/build_and_install_app.sh` — build and install macOS app to `/Applications/LinkInJob.app`.
 
-## Требования
+## Requirements
 
 - Python 3
-- `PySide6` (для Python GUI):
+- `PySide6` (for Python GUI):
 
 ```bash
 python3 -m pip install PySide6
 ```
 
-- Опционально: `rclone` (для sync с Google Drive)
-- Для `LinkInJob` (SwiftUI): Xcode/Swift toolchain
+- Optional: `rclone` (for Google Drive sync)
+- For `LinkInJob` (SwiftUI): Xcode / Swift toolchain
 
-## Основные пути (по умолчанию)
+## Default Paths
 
-- TXT-архив писем:  
+- TXT email archive:  
   `$HOME/Library/Application Support/DriveCVSync/LinkedIn Archive`
-- SQLite БД заявок:  
+- Applications SQLite DB:  
   `$HOME/.local/share/linkedin_apps/applications.db`
-- Лог последней синхронизации (LinkInJob):  
+- Last sync log (LinkInJob):  
   `$HOME/Library/Application Support/LinkInJob/Logs/last_sync.log`
 
-## Использование
+## Usage
 
-### 1) Обновить Obsidian markdown из TXT писем
+### 1) Update Obsidian markdown from TXT emails
 
 ```bash
 python3 scripts/update_linkedin_applications.py
 ```
 
-Переопределить пути:
+Override paths:
 
 ```bash
 python3 scripts/update_linkedin_applications.py \
@@ -60,13 +60,13 @@ python3 scripts/update_linkedin_applications.py \
   --target-file "/path/to/output.md"
 ```
 
-### 2) SQL shell (терминал)
+### 2) SQL shell (terminal)
 
 ```bash
 python3 scripts/folder_shell_sql.py
 ```
 
-С кастомным source/DB:
+With custom source/DB:
 
 ```bash
 python3 scripts/folder_shell_sql.py \
@@ -75,65 +75,65 @@ python3 scripts/folder_shell_sql.py \
   --sync-first
 ```
 
-### 3) Python GUI заявок (PySide6)
+### 3) Python GUI for applications (PySide6)
 
 ```bash
 python3 scripts/linkedin_applications_gui_sql.py \
   --source-dir "$HOME/Library/Application Support/DriveCVSync/LinkedIn Archive"
 ```
 
-Что делает:
+What it does:
 
-- Читает `.txt` письма из `--source-dir`.
-- Автоклассифицирует записи в: `Входящие`, `Applied`, `Reject`, `Interview`, `Manual Sort`, `Archive`.
-- Хранит данные в SQLite (включая ручные изменения статусов).
-- Поддерживает несколько ссылок вакансий в одном письме (1 ссылка = 1 запись).
-- Подтягивает `About the job` по LinkedIn URL, когда доступно.
+- Reads `.txt` emails from `--source-dir`.
+- Auto-classifies records into: `Inbox`, `Applied`, `Reject`, `Interview`, `Manual Sort`, `Archive`.
+- Stores all data in SQLite (including manual status changes).
+- Supports multiple job links in one email (1 link = 1 record).
+- Fetches `About the job` from LinkedIn URL when available.
 
-### 4) Нативное macOS приложение (SwiftUI)
+### 4) Native macOS app (SwiftUI)
 
-Сборка и установка:
+Build and install:
 
 ```bash
 cd LinkInJob
 ./scripts/build_and_install_app.sh
 ```
 
-После сборки приложение будет установлено в:
+Installed app path:
 
 `/Applications/LinkInJob.app`
 
-### 5) Sync из Google Drive
+### 5) Google Drive sync
 
-Если настроен `rclone`, можно запускать:
+If `rclone` is configured:
 
 ```bash
 ./scripts/sync_drive_rclone.sh
 ```
 
-## Gmail Apps Script -> TXT архив
+## Gmail Apps Script -> TXT Archive
 
-Используется Google Apps Script в Gmail/Drive, который сохраняет письма LinkedIn в `.txt`.
-Именно эти TXT-файлы дальше обрабатываются парсером в этом проекте.
+A Google Apps Script in Gmail/Drive exports LinkedIn emails to plain `.txt` files.
+These files are consumed by the parser/sync pipeline in this repository.
 
-Папка архива в Drive:
+Drive archive folder:
 
 `LinkedIn Archive`
 
-Таблица трекинга:
+Tracking spreadsheet:
 
 `LinkedIn_Job_Tracker`
 
-Текущий скрипт:
+Current script:
 
 ```javascript
 function processLinkedInArchive() {
   const now = new Date();
   const hours = now.getHours();
 
-  // Не работаем с 00:00 до 08:00
+  // Skip from 00:00 to 08:00
   if (hours >= 0 && hours < 8) {
-    console.log("Ночной режим. Пропуск запуска.");
+    console.log("Night mode. Skipping run.");
     return;
   }
 
@@ -141,26 +141,26 @@ function processLinkedInArchive() {
   const FOLDER_NAME = "LinkedIn Archive";
   const SPREADSHEET_NAME = "LinkedIn_Job_Tracker";
 
-  // 1. Находим папку "LinkedIn Archive"
+  // 1. Find folder
   let folders = DriveApp.getFoldersByName(FOLDER_NAME);
   let folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(FOLDER_NAME);
 
-  // 2. Находим таблицу для трекинга
+  // 2. Find tracking spreadsheet
   let ss;
   let files = DriveApp.getFilesByName(SPREADSHEET_NAME);
   if (files.hasNext()) {
     ss = SpreadsheetApp.open(files.next());
   } else {
     ss = SpreadsheetApp.create(SPREADSHEET_NAME);
-    ss.getSheets()[0].appendRow(["Дата", "Компания", "Статус", "Файл на Диске"]);
+    ss.getSheets()[0].appendRow(["Date", "Company", "Status", "Drive File"]);
   }
   let sheet = ss.getSheets()[0];
 
-  // 3. Получаем письма
+  // 3. Get emails
   let label = GmailApp.getUserLabelByName(LABEL_NAME);
   if (!label) return;
 
-  let threads = label.getThreads(0, 15); // Берем последние 15 веток
+  let threads = label.getThreads(0, 15);
 
   threads.forEach(thread => {
     let messages = thread.getMessages();
@@ -171,20 +171,17 @@ function processLinkedInArchive() {
 
     let fileName = `${formattedDate} - ${subject.replace(/[/\\?%*:|"<>]/g, "")}.txt`;
 
-    // Если файла еще нет — создаем его
     if (!folder.getFilesByName(fileName).hasNext()) {
-      let content = `От: ${lastMsg.getFrom()}\nДата: ${date}\nТема: ${subject}\n\n${lastMsg.getPlainBody()}`;
+      let content = `From: ${lastMsg.getFrom()}\nDate: ${date}\nSubject: ${subject}\n\n${lastMsg.getPlainBody()}`;
       let newFile = folder.createFile(fileName, content);
 
-      // Определяем статус
-      let status = "Подано";
+      let status = "Applied";
       let body = lastMsg.getPlainBody().toLowerCase();
-      if (body.includes("viewed your application")) status = "Просмотрено";
-      if (body.includes("unfortunately") || body.includes("not moving forward")) status = "Отказ";
+      if (body.includes("viewed your application")) status = "Viewed";
+      if (body.includes("unfortunately") || body.includes("not moving forward")) status = "Rejected";
 
-      // Добавляем в таблицу
       sheet.appendRow([date, subject, status, newFile.getUrl()]);
-      console.log("Добавлено: " + fileName);
+      console.log("Added: " + fileName);
     }
   });
 }

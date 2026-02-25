@@ -11,6 +11,11 @@ mkdir -p "${LIB_DIR}" "${PKG_DIR}" "${BIN_DIR}"
 
 python3 -m pip install --upgrade --target "${LIB_DIR}" argostranslate
 
+# Some Argos/Stanza paths may break if sympy is partially installed.
+# Keep a known-good sympy in the isolated Argos runtime.
+rm -rf "${LIB_DIR}/sympy" "${LIB_DIR}"/sympy-*.dist-info "${LIB_DIR}/mpmath" "${LIB_DIR}"/mpmath-*.dist-info
+python3 -m pip install --upgrade --force-reinstall --target "${LIB_DIR}" "sympy==1.12"
+
 if [ -d "${LEGACY_PKG_DIR}" ]; then
   rsync -a --ignore-existing "${LEGACY_PKG_DIR}/" "${PKG_DIR}/"
 fi

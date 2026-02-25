@@ -8,6 +8,8 @@ cd "$PROJECT_DIR"
 APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-LinkInJob}"
 EXECUTABLE_NAME="${EXECUTABLE_NAME:-LinkInJob}"
 BUNDLE_ID="${BUNDLE_ID:-com.grigorym.LinkInJob}"
+APP_VERSION="${APP_VERSION:-0.9.2}"
+BUILD_VERSION="${BUILD_VERSION:-0.9.2}"
 APP_DIR="${APP_DIR:-dist/${APP_DISPLAY_NAME}.app}"
 INSTALL_DIR="${INSTALL_DIR:-/Applications/${APP_DISPLAY_NAME}.app}"
 LEGACY_INSTALL_DIR="${LEGACY_INSTALL_DIR:-/Applications/SelectedTextOverlay.app}"
@@ -159,9 +161,9 @@ ${ICON_PLIST_BLOCK}
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.9</string>
+  <string>${APP_VERSION}</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${BUILD_VERSION}</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>NSPrincipalClass</key>

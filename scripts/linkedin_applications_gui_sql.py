@@ -834,9 +834,9 @@ class ApplicationsDB:
                 continue
             try:
                 translated = source.get_translation(target).translate(chunk)
-                normalized = self._normalize_inline(translated)
-                if normalized:
-                    return normalized
+                translated_text = str(translated or "").strip()
+                if translated_text:
+                    return translated_text
             except Exception:
                 continue
 
@@ -845,62 +845,83 @@ class ApplicationsDB:
                 continue
             try:
                 translated = source.get_translation(target).translate(chunk)
-                normalized = self._normalize_inline(translated)
-                if normalized:
-                    return normalized
+                translated_text = str(translated or "").strip()
+                if translated_text:
+                    return translated_text
             except Exception:
                 continue
 
         raise RuntimeError("Argos Translate failed: no suitable local source->ru model installed.")
 
     def _translate_fragment_to_russian(self, fragment: str, strict: bool = False) -> str:
-        normalized = self._normalize_inline(fragment)
-        if not normalized or not TRANSLATE_TO_RU:
+        if not fragment or not TRANSLATE_TO_RU:
             return fragment
-        if self._looks_russian(normalized):
+        fragment_with_lf = fragment.replace("\r\n", "\n").replace("\r", "\n")
+        line_break_token = "__LINKINJOB_LB_9F4C__"
+        prepared_fragment = (
+            fragment_with_lf.replace("\n", f" {line_break_token} ")
+            if "\n" in fragment_with_lf
+            else fragment_with_lf
+        )
+        stripped_fragment = prepared_fragment.strip()
+        if not stripped_fragment:
             return fragment
-        if "http://" in normalized.lower() or "https://" in normalized.lower():
+        if self._looks_russian(stripped_fragment):
             return fragment
-        cached = self.translation_cache.get(normalized)
-        if cached is not None:
-            return cached
+        if "http://" in stripped_fragment.lower() or "https://" in stripped_fragment.lower():
+            return fragment
 
-        def split_chunks(text: str, max_len: int = 450) -> list[str]:
+        def split_chunks(text: str, max_len: int = 1100) -> list[str]:
             if len(text) <= max_len:
                 return [text]
             chunks: list[str] = []
-            current = ""
-            for word in text.split():
-                if not current:
-                    current = word
-                    continue
-                if len(current) + 1 + len(word) <= max_len:
-                    current += " " + word
+            start = 0
+            while start < len(text):
+                end = min(start + max_len, len(text))
+                if end < len(text):
+                    split_at = max(
+                        text.rfind("\n", start, end),
+                        text.rfind(". ", start, end),
+                        text.rfind("; ", start, end),
+                        text.rfind(", ", start, end),
+                        text.rfind(" ", start, end),
+                    )
+                    if split_at <= start + max_len // 3:
+                        split_at = end
                 else:
-                    chunks.append(current)
-                    current = word
-            if current:
-                chunks.append(current)
+                    split_at = end
+                chunk = text[start:split_at]
+                if chunk:
+                    chunks.append(chunk)
+                start = split_at
             return chunks or [text]
 
         def translate_chunk(chunk: str) -> str:
             errors: list[Exception] = []
 
-            provider_order = (
-                ["google_api", "google_unofficial", "mymemory"]
-                if self.translate_provider == "google_api"
-                else (
-                    ["argos_local", "google_api", "google_unofficial", "mymemory"]
-                    if self.translate_provider == "argos_local"
-                    else ["google_unofficial", "google_api", "mymemory"]
-                )
-            )
+            # Respect the explicitly selected translation provider from UI.
+            # Do not silently switch providers in strict mode.
+            if self.translate_provider == "google_api":
+                provider_order = ["google_api"]
+            elif self.translate_provider == "argos_local":
+                provider_order = ["argos_local"]
+            else:
+                provider_order = ["google_unofficial"]
+
+            # Non-strict background translation can still try broader fallback.
+            if not strict:
+                if self.translate_provider == "google_api":
+                    provider_order.extend(["google_unofficial", "argos_local", "mymemory"])
+                elif self.translate_provider == "argos_local":
+                    provider_order.extend(["google_api", "google_unofficial", "mymemory"])
+                else:
+                    provider_order.extend(["google_api", "argos_local", "mymemory"])
 
             for provider in provider_order:
                 try:
                     if provider == "google_api":
                         if not self.google_translate_api_key:
-                            continue
+                            raise RuntimeError("Google Cloud API key is not configured")
                         candidate = self._translate_chunk_google_api(chunk)
                         if self._translation_looks_successful(chunk, candidate):
                             return candidate
@@ -929,14 +950,43 @@ class ApplicationsDB:
             raise RuntimeError("Translation failed")
 
         try:
-            translated_parts = [translate_chunk(chunk) for chunk in split_chunks(normalized)]
-            result = " ".join(part for part in translated_parts if part).strip() or fragment
+            translated_parts: list[str] = []
+            for chunk in split_chunks(prepared_fragment):
+                # Preserve original separators/indentation around translated content.
+                leading = re.match(r"^\s*", chunk).group(0)
+                trailing = re.search(r"\s*$", chunk).group(0)
+                core = chunk[len(leading):len(chunk) - len(trailing) if trailing else len(chunk)]
+
+                if not core.strip():
+                    translated_parts.append(chunk)
+                    continue
+
+                cached = self.translation_cache.get(core)
+                if cached is None:
+                    cached = translate_chunk(core)
+                    self.translation_cache[core] = cached
+                translated_parts.append(f"{leading}{cached}{trailing}")
+
+            result = "".join(translated_parts) or fragment_with_lf
+            # Some providers may mutate marker punctuation/underscores.
+            # Restore both canonical and deformed marker variants back to newlines.
+            result = re.sub(
+                rf"\s*{re.escape(line_break_token)}\s*",
+                "\n",
+                result,
+                flags=re.IGNORECASE,
+            )
+            result = re.sub(
+                r"\s*[_\-–—•·]*\s*LINKINJOB[\s_\-]+LB[\s_\-]+9F4C\s*[_\-–—•·]*\s*",
+                "\n",
+                result,
+                flags=re.IGNORECASE,
+            )
         except Exception as exc:
             if strict:
                 raise RuntimeError(f"Translation failed: {exc}") from exc
             result = fragment
 
-        self.translation_cache[normalized] = result
         return result
 
     def translate_to_russian(self, text: str, strict: bool = False) -> str:
@@ -948,26 +998,19 @@ class ApplicationsDB:
         if self._looks_russian(normalized):
             return text
 
-        # Translate larger chunks to reduce rate-limit hits from too many requests.
-        max_chunk = 450
-        words = normalized.split()
-        chunks: list[str] = []
-        current = ""
-        for word in words:
-            if not current:
-                current = word
+        # Preserve original paragraph boundaries and empty lines.
+        parts = re.split(r"(\n\s*\n+)", text)
+        translated_parts: list[str] = []
+        for part in parts:
+            if not part:
                 continue
-            if len(current) + 1 + len(word) <= max_chunk:
-                current += " " + word
-            else:
-                chunks.append(current)
-                current = word
-        if current:
-            chunks.append(current)
+            if re.fullmatch(r"\n\s*\n+", part):
+                translated_parts.append(part)
+                continue
+            translated_parts.append(self._translate_fragment_to_russian(part, strict=strict))
 
-        translated = [self._translate_fragment_to_russian(chunk, strict=strict) for chunk in chunks]
-        result = "\n\n".join(part for part in translated if part).strip()
-        return result or text
+        result = "".join(translated_parts)
+        return result if result.strip() else text
 
     def parse_from_job_link(
         self, link_url: str, fallback_company: str, fallback_role: str, fallback_location: str

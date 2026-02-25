@@ -3,8 +3,7 @@ import SwiftUI
 
 struct ApplicationListView: View {
     @EnvironmentObject private var viewModel: AppViewModel
-    @FocusState private var listFocused: Bool
-    @FocusState private var searchFocused: Bool
+    @FocusState private var focus: FocusTarget?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,6 +18,8 @@ struct ApplicationListView: View {
                         isSelected: viewModel.selectedItemID == item.id,
                         toggleStar: { viewModel.toggleStar(for: item) }
                     )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                     .contextMenu {
                         Menu("Set Stage") {
                             ForEach(Stage.allCases, id: \.self) { stage in
@@ -46,8 +47,13 @@ struct ApplicationListView: View {
                             viewModel.resetToAuto(for: item)
                         }
                     }
+                    .onTapGesture {
+                        viewModel.selectedItemID = item.id
+                        focus = .jobsList
+                    }
                     .onTapGesture(count: 2) {
                         viewModel.selectedItemID = item.id
+                        focus = .jobsList
                         if item.jobURL != nil {
                             viewModel.openJobLink(for: item)
                         } else {
@@ -61,11 +67,26 @@ struct ApplicationListView: View {
                 }
             }
             .listStyle(.plain)
-            .focused($listFocused)
+            .focused($focus, equals: .jobsList)
+            .onMoveCommand { direction in
+                switch direction {
+                case .up:
+                    viewModel.selectPreviousInFilteredList()
+                case .down:
+                    viewModel.selectNextInFilteredList()
+                default:
+                    break
+                }
+            }
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    focus = .jobsList
+                }
+            )
             .scrollContentBackground(.hidden)
             .background(Color(nsColor: .windowBackgroundColor))
             .background(
-                KeyCaptureView(isEnabled: listFocused && !searchFocused) { event in
+                KeyCaptureView(isEnabled: focus == .jobsList) { event in
                     switch event {
                     case .letter(let char):
                         viewModel.handleListHotkey(String(char))
@@ -79,17 +100,22 @@ struct ApplicationListView: View {
                     case .space:
                         guard let item = viewModel.selectedItem else { return }
                         viewModel.openSourceFile(for: item)
-                    case .arrowUp:
-                        viewModel.moveSelectionInFilteredList(by: -1)
-                    case .arrowDown:
-                        viewModel.moveSelectionInFilteredList(by: 1)
                     }
                 }
+                .allowsHitTesting(false)
             )
         }
         .navigationTitle("Applications")
         .onAppear {
-            listFocused = true
+            viewModel.ensureSelectionVisibleInFilteredList()
+            focus = .jobsList
+        }
+        .onChange(of: viewModel.filteredApplications.map(\.id)) { _, _ in
+            viewModel.ensureSelectionVisibleInFilteredList()
+        }
+        .onChange(of: viewModel.selectedItemID) { _, newValue in
+            let selectedText = newValue?.uuidString ?? "nil"
+            print("[Selection] selectedItemID=\(selectedText)")
         }
     }
 
@@ -105,7 +131,7 @@ struct ApplicationListView: View {
 
             TextField("Search company, role, location", text: $viewModel.searchText)
                 .textFieldStyle(.roundedBorder)
-                .focused($searchFocused)
+                .focused($focus, equals: .searchField)
                 .frame(maxWidth: 430, alignment: .leading)
         }
         .padding(.horizontal, 12)
@@ -114,7 +140,7 @@ struct ApplicationListView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .trailing) {
             Button("Focus Search") {
-                searchFocused = true
+                focus = .searchField
             }
             .keyboardShortcut("f", modifiers: .command)
             .hidden()
@@ -126,8 +152,11 @@ private enum KeyAction {
     case letter(Character)
     case returnKey
     case space
-    case arrowUp
-    case arrowDown
+}
+
+private enum FocusTarget: Hashable {
+    case jobsList
+    case searchField
 }
 
 private struct KeyCaptureView: NSViewRepresentable {
@@ -176,12 +205,6 @@ private struct KeyCaptureView: NSViewRepresentable {
                     return nil
                 case 49:
                     self.onKeyAction(.space)
-                    return nil
-                case 126:
-                    self.onKeyAction(.arrowUp)
-                    return nil
-                case 125:
-                    self.onKeyAction(.arrowDown)
                     return nil
                 default:
                     if let char = event.charactersIgnoringModifiers?.lowercased().first,

@@ -616,6 +616,18 @@ finally:
         self.selectedItemID = filteredApplications[nextIndex].id
     }
 
+    func selectPreviousInFilteredList() {
+        moveSelectionInFilteredList(by: -1)
+    }
+
+    func selectNextInFilteredList() {
+        moveSelectionInFilteredList(by: 1)
+    }
+
+    func ensureSelectionVisibleInFilteredList() {
+        ensureSelectionIsVisible()
+    }
+
     func timeline(for item: ApplicationItem) -> [ActivityEvent] {
         var events: [ActivityEvent] = []
 

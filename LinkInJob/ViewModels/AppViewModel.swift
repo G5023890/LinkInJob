@@ -9,12 +9,6 @@ final class AppViewModel: ObservableObject {
     private static let translationMethodDefaultsKey = "app.translationMethod"
     private static let googleTranslateAPIKeyLegacyDefaultsKey = "app.googleTranslateAPIKey"
     private lazy var projectRootDirectory: String = Self.resolveProjectRootDirectory()
-    private lazy var sharedArgosBaseDirectory: String = (NSHomeDirectory() as NSString)
-        .appendingPathComponent("Library/Application Support/ArgosTranslate")
-    private lazy var sharedArgosPythonLibDirectory: String = (sharedArgosBaseDirectory as NSString)
-        .appendingPathComponent("python_lib")
-    private lazy var sharedArgosPackagesDirectory: String = (sharedArgosBaseDirectory as NSString)
-        .appendingPathComponent("packages")
     private let keychainStore = KeychainStore(
         service: "com.grigorymordokhovich.LinkInJob",
         account: "google_translate_api_key"
@@ -59,18 +53,15 @@ final class AppViewModel: ObservableObject {
     enum TranslationMethod: String, CaseIterable, Identifiable {
         case googleUnofficial = "google_unofficial"
         case googleAPI = "google_api"
-        case argosLocal = "argos_local"
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .googleUnofficial:
-                return "Google Free"
+                return "Google Web (gtx)"
             case .googleAPI:
                 return "Google Cloud API"
-            case .argosLocal:
-                return "Argos Translate (Local)"
             }
         }
     }
@@ -700,15 +691,6 @@ finally:
         var env: [String: String] = ["LINKINJOB_TRANSLATE_PROVIDER": translationMethod.rawValue]
         if !googleTranslateAPIKey.isEmpty {
             env["LINKINJOB_GOOGLE_TRANSLATE_API_KEY"] = googleTranslateAPIKey
-        }
-        if translationMethod == .argosLocal {
-            env["ARGOS_PACKAGES_DIR"] = sharedArgosPackagesDirectory
-            let basePythonPath = ProcessInfo.processInfo.environment["PYTHONPATH"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if basePythonPath.isEmpty {
-                env["PYTHONPATH"] = sharedArgosPythonLibDirectory
-            } else {
-                env["PYTHONPATH"] = "\(sharedArgosPythonLibDirectory):\(basePythonPath)"
-            }
         }
         return env
     }

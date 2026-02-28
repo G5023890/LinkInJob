@@ -109,7 +109,7 @@ class ApplicationsDB:
         self.google_translate_blocked = False
         self.translate_provider = (
             TRANSLATE_PROVIDER
-            if TRANSLATE_PROVIDER in {"google_unofficial", "google_api", "argos_local"}
+            if TRANSLATE_PROVIDER in {"google_unofficial", "google_api"}
             else "google_unofficial"
         )
         self.google_translate_api_key = GOOGLE_TRANSLATE_API_KEY
@@ -711,26 +711,6 @@ class ApplicationsDB:
         return translated_text or chunk
 
     @staticmethod
-    def _guess_source_lang_for_mymemory(text: str) -> str:
-        if re.search(r"[\u0590-\u05FF]", text):
-            return "he"
-        if re.search(r"[\u0600-\u06FF]", text):
-            return "ar"
-        if re.search(r"[А-Яа-яЁё]", text):
-            return "ru"
-        return "en"
-
-    @staticmethod
-    def _guess_source_langs_for_argos(text: str) -> list[str]:
-        if re.search(r"[\u0590-\u05FF]", text):
-            return ["he", "en"]
-        if re.search(r"[\u0600-\u06FF]", text):
-            return ["ar", "en"]
-        if re.search(r"[А-Яа-яЁё]", text):
-            return ["ru"]
-        return ["en", "de", "fr", "es", "pt", "it"]
-
-    @staticmethod
     def _contains_hebrew_or_arabic(text: str) -> bool:
         return bool(re.search(r"[\u0590-\u05FF\u0600-\u06FF]", text or ""))
 
@@ -791,68 +771,6 @@ class ApplicationsDB:
                     break
         raise last_error if last_error else RuntimeError("Google unofficial translate failed")
 
-    def _translate_chunk_mymemory(self, chunk: str) -> str:
-        src_lang = self._guess_source_lang_for_mymemory(chunk)
-        q = urllib.parse.urlencode({"q": chunk, "langpair": f"{src_lang}|ru"})
-        url = f"https://api.mymemory.translated.net/get?{q}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=12) as response:
-            payload_text = response.read().decode("utf-8", errors="ignore")
-        data = json.loads(payload_text)
-        translated = (
-            data.get("responseData", {}).get("translatedText", "")
-            if isinstance(data, dict) else ""
-        )
-        translated_text = html.unescape(str(translated)).strip()
-        if translated_text:
-            return translated_text
-        raise RuntimeError("MyMemory translate returned empty result")
-
-    def _translate_chunk_argos_local(self, chunk: str) -> str:
-        try:
-            import argostranslate.translate as argos_translate
-        except Exception as exc:
-            raise RuntimeError(
-                "Argos Translate package is not installed. Install: python3 -m pip install argostranslate"
-            ) from exc
-
-        installed_languages = argos_translate.get_installed_languages()
-        if not installed_languages:
-            raise RuntimeError("Argos Translate has no installed language models.")
-
-        languages_by_code = {lang.code: lang for lang in installed_languages}
-        target = languages_by_code.get("ru")
-        if target is None:
-            raise RuntimeError("Argos Translate model for target language 'ru' is not installed.")
-
-        source_codes = self._guess_source_langs_for_argos(chunk)
-        for code in source_codes:
-            if code == "ru":
-                return chunk
-            source = languages_by_code.get(code)
-            if source is None:
-                continue
-            try:
-                translated = source.get_translation(target).translate(chunk)
-                translated_text = str(translated or "").strip()
-                if translated_text:
-                    return translated_text
-            except Exception:
-                continue
-
-        for source in installed_languages:
-            if source.code == "ru":
-                continue
-            try:
-                translated = source.get_translation(target).translate(chunk)
-                translated_text = str(translated or "").strip()
-                if translated_text:
-                    return translated_text
-            except Exception:
-                continue
-
-        raise RuntimeError("Argos Translate failed: no suitable local source->ru model installed.")
-
     def _translate_fragment_to_russian(self, fragment: str, strict: bool = False) -> str:
         if not fragment or not TRANSLATE_TO_RU:
             return fragment
@@ -899,23 +817,18 @@ class ApplicationsDB:
         def translate_chunk(chunk: str) -> str:
             errors: list[Exception] = []
 
-            # Respect the explicitly selected translation provider from UI.
-            # Do not silently switch providers in strict mode.
+            # Respect explicitly selected provider. In non-strict mode,
+            # allow fallback only between supported Google methods.
             if self.translate_provider == "google_api":
                 provider_order = ["google_api"]
-            elif self.translate_provider == "argos_local":
-                provider_order = ["argos_local"]
             else:
                 provider_order = ["google_unofficial"]
 
-            # Non-strict background translation can still try broader fallback.
             if not strict:
                 if self.translate_provider == "google_api":
-                    provider_order.extend(["google_unofficial", "argos_local", "mymemory"])
-                elif self.translate_provider == "argos_local":
-                    provider_order.extend(["google_api", "google_unofficial", "mymemory"])
+                    provider_order.append("google_unofficial")
                 else:
-                    provider_order.extend(["google_api", "argos_local", "mymemory"])
+                    provider_order.append("google_api")
 
             for provider in provider_order:
                 try:
@@ -931,16 +844,6 @@ class ApplicationsDB:
                         if self._translation_looks_successful(chunk, candidate):
                             return candidate
                         raise RuntimeError("Google unofficial returned non-RU or unchanged text")
-                    if provider == "argos_local":
-                        candidate = self._translate_chunk_argos_local(chunk)
-                        if self._translation_looks_successful(chunk, candidate):
-                            return candidate
-                        raise RuntimeError("Argos local returned non-RU or unchanged text")
-                    if provider == "mymemory":
-                        candidate = self._translate_chunk_mymemory(chunk)
-                        if self._translation_looks_successful(chunk, candidate):
-                            return candidate
-                        raise RuntimeError("MyMemory returned non-RU or unchanged text")
                 except Exception as exc:
                     errors.append(exc)
                     continue
